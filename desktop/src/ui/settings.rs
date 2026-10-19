@@ -1,4 +1,4 @@
-//! Settings: which mic to use, always-listen, the hotkey, and signing out.
+//! Settings: which assistant and mic to use, always-listen, the hotkey, and signing out.
 
 use std::fmt;
 
@@ -6,8 +6,41 @@ use iced::widget::{button, column, container, pick_list, row, scrollable, text, 
 use iced::{Alignment, Element, Length};
 use iot_desktop::audio::mic::Mic;
 use iot_desktop::config::Config;
+use iot_desktop::ha::assist::Assistant;
 
 use super::{Message, style};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssistantChoice {
+    /// `None` follows HA's preferred assistant.
+    pub id: Option<String>,
+    label: String,
+}
+
+impl fmt::Display for AssistantChoice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.label)
+    }
+}
+
+fn assistant_choices(assistants: &[Assistant], preferred: Option<&str>) -> Vec<AssistantChoice> {
+    let preferred_name = assistants
+        .iter()
+        .find(|assistant| Some(assistant.id.as_str()) == preferred)
+        .map(|assistant| assistant.name.as_str());
+    let mut choices = vec![AssistantChoice {
+        id: None,
+        label: match preferred_name {
+            Some(name) => format!("Home Assistant's preferred ({name})"),
+            None => "Home Assistant's preferred".into(),
+        },
+    }];
+    choices.extend(assistants.iter().map(|assistant| AssistantChoice {
+        id: Some(assistant.id.clone()),
+        label: assistant.name.clone(),
+    }));
+    choices
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MicChoice {
@@ -50,8 +83,31 @@ fn choices(mics: &[Mic], current: Option<&str>) -> Vec<MicChoice> {
 pub fn view<'a>(
     config: &'a Config,
     mics: &'a [Mic],
+    assistants: &'a [Assistant],
+    preferred: Option<&'a str>,
     shortcut: Option<&'a str>,
 ) -> Element<'a, Message> {
+    let assistant_options = assistant_choices(assistants, preferred);
+    let assistant_selected = assistant_options
+        .iter()
+        .find(|choice| choice.id == config.assistant)
+        .cloned();
+    let assistant = column![
+        text("Assistant").size(18),
+        pick_list(
+            assistant_options,
+            assistant_selected,
+            Message::AssistantSelected,
+        )
+        .width(Length::Fill),
+        text(
+            "Which of your Home Assistant assistants handles commands: its agent, \
+             speech-to-text, voice and wake word.",
+        )
+        .style(text::secondary),
+    ]
+    .spacing(8);
+
     let choices = choices(mics, config.mic.as_deref());
     let selected = choices
         .iter()
@@ -120,6 +176,7 @@ pub fn view<'a>(
                 .style(button::primary),
         ]
         .align_y(Alignment::Center),
+        section(assistant),
         section(microphone),
         section(wake),
         section(hotkey),

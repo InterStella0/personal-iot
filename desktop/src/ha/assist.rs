@@ -254,8 +254,14 @@ mod tests {
         assert_eq!(
             assistants,
             [
-                Assistant { id: "a".into(), name: "Home Assistant".into() },
-                Assistant { id: "b".into(), name: "Voice-Jev".into() },
+                Assistant {
+                    id: "a".into(),
+                    name: "Home Assistant".into()
+                },
+                Assistant {
+                    id: "b".into(),
+                    name: "Voice-Jev".into()
+                },
             ]
         );
         assert_eq!(preferred.as_deref(), Some("a"));

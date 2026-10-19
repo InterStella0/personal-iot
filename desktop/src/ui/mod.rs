@@ -14,13 +14,14 @@ use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Element, Length, Size, Subscription, Task, Theme, window};
 use iot_desktop::audio::mic::{self, Mic};
 use iot_desktop::config::{APP_ID, Config};
+use iot_desktop::ha::assist::Assistant;
 use iot_desktop::ha::entity::{CONTROLLABLE, Registry, State};
 use iot_desktop::ha::store;
 use iot_desktop::ha::ws::{self, Audio, Command, Event, Handle, Session};
 use serde_json::{Value, json};
 
 use crate::{shortcut, tray};
-use settings::MicChoice;
+use settings::{AssistantChoice, MicChoice};
 use voice::{Phase, Voice};
 
 pub struct Options {
@@ -57,6 +58,8 @@ pub struct App {
     command: String,
     settings: bool,
     mics: Vec<Mic>,
+    assistants: Vec<Assistant>,
+    preferred_assistant: Option<String>,
     notice: Option<String>,
     shortcut_problem: Option<String>,
     tray: Option<tray::Handle>,
@@ -81,6 +84,7 @@ pub enum Message {
     RefreshMics,
     Mics(Result<Vec<Mic>, String>),
     MicSelected(MicChoice),
+    AssistantSelected(AssistantChoice),
     WakeWord(bool),
     DismissNotice,
     Tray(tray::Event),
@@ -105,6 +109,8 @@ impl App {
             command: String::new(),
             settings: options.start_in_settings,
             mics: Vec::new(),
+            assistants: Vec::new(),
+            preferred_assistant: None,
             notice: None,
             shortcut_problem: None,
             tray: None,
@@ -161,7 +167,11 @@ impl App {
             Message::WindowOpened(id) => {
                 self.window = Some(id);
                 if self.screenshot.is_some() {
-                    return Task::perform(tokio::time::sleep(Duration::from_secs(5)), |_| {
+                    let delay = std::env::var("IOT_DESKTOP_SCREENSHOT_DELAY")
+                        .ok()
+                        .and_then(|seconds| seconds.parse().ok())
+                        .unwrap_or(5);
+                    return Task::perform(tokio::time::sleep(Duration::from_secs(delay)), |_| {
                         Message::TakeScreenshot
                     });
                 }
@@ -256,6 +266,11 @@ impl App {
                 self.save_config();
                 self.update_always_listen();
             }
+            Message::AssistantSelected(choice) => {
+                self.config.assistant = choice.id;
+                self.save_config();
+                self.use_assistant();
+            }
             Message::DismissNotice => self.notice = None,
             Message::Tray(event) => return self.on_tray(event),
             Message::Shortcut(shortcut::Event::Talk) => return self.update(Message::Talk),
@@ -284,7 +299,7 @@ impl App {
             Event::Online(handle) => {
                 self.handle = Some(handle);
                 self.link = Link::Online;
-                self.update_always_listen();
+                self.use_assistant();
             }
             Event::Offline(reason) => {
                 self.handle = None;
@@ -323,6 +338,18 @@ impl App {
                 {
                     return notify(message);
                 }
+            }
+            Event::Assistants { list, preferred } => {
+                // The chosen assistant was deleted in HA: fall back to HA's preferred one.
+                if let Some(id) = &self.config.assistant
+                    && !list.iter().any(|assistant| &assistant.id == id)
+                {
+                    self.config.assistant = None;
+                    self.save_config();
+                    self.use_assistant();
+                }
+                self.assistants = list;
+                self.preferred_assistant = preferred;
             }
             Event::Error(error) => self.notice = Some(error),
         }
@@ -379,6 +406,14 @@ impl App {
         if let Err(err) = self.config.save() {
             tracing::warn!("couldn't save settings: {err:#}");
         }
+    }
+
+    /// Tells the connection which assistant to use, then restarts always-listen on it.
+    fn use_assistant(&mut self) {
+        if let Some(handle) = &self.handle {
+            handle.send(Command::UseAssistant(self.config.assistant.clone()));
+        }
+        self.update_always_listen();
     }
 
     fn update_always_listen(&mut self) {
@@ -466,7 +501,13 @@ impl App {
             );
         }
         let body = if self.settings {
-            settings::view(&self.config, &self.mics, self.shortcut_problem.as_deref())
+            settings::view(
+                &self.config,
+                &self.mics,
+                &self.assistants,
+                self.preferred_assistant.as_deref(),
+                self.shortcut_problem.as_deref(),
+            )
         } else {
             dashboard::view(&self.states, &self.registry, self.loaded)
         };

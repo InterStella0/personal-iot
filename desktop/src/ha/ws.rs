@@ -155,6 +155,7 @@ enum Pending {
     Entities,
     States,
     Assistants,
+    Config,
     Subscribe,
     Call(String),
     Run,
@@ -203,6 +204,10 @@ struct Connection {
     pending: HashMap<u64, Pending>,
     snapshot: Option<Snapshot>,
     state_events: Option<u64>,
+    started_events: Option<u64>,
+    /// HA has finished starting. Wake word runs wait for it: a run that starts earlier holds up
+    /// HA's startup, since HA waits for running tasks before it reports itself started.
+    ha_running: bool,
     runs: HashMap<u64, Run>,
     feeds: HashMap<u64, Feed>,
     audio_tx: mpsc::Sender<(u64, Vec<u8>)>,
@@ -290,6 +295,8 @@ impl Connection {
             pending: HashMap::new(),
             snapshot: Some(Snapshot::default()),
             state_events: None,
+            started_events: None,
+            ha_running: false,
             runs: HashMap::new(),
             feeds: HashMap::new(),
             audio_tx,
@@ -333,6 +340,16 @@ impl Connection {
             )
             .await?;
         connection.state_events = Some(id);
+        let id = connection
+            .request(
+                json!({"type": "subscribe_events", "event_type": "homeassistant_started"}),
+                Pending::Subscribe,
+            )
+            .await?;
+        connection.started_events = Some(id);
+        connection
+            .request(json!({"type": "get_config"}), Pending::Config)
+            .await?;
         Ok((connection, stream, command_rx, audio_rx))
     }
 
@@ -406,6 +423,7 @@ impl Connection {
         let id = message["id"].as_u64().unwrap_or_default();
         match message["type"].as_str() {
             Some("result") => self.on_result(id, &message).await,
+            Some("event") if Some(id) == self.started_events => self.on_started().await,
             Some("event") if Some(id) == self.state_events => {
                 let data = &message["event"]["data"];
                 let entity_id = data["entity_id"].as_str().unwrap_or_default().to_owned();
@@ -454,6 +472,7 @@ impl Connection {
                 }
                 self.maybe_emit_snapshot().await;
             }
+            Pending::Config if success && result["state"] == "RUNNING" => self.on_started().await?,
             Pending::Assistants if success => {
                 let (list, preferred) = assist::parse_assistants(&result);
                 self.emit(Event::Assistants { list, preferred }).await;
@@ -571,9 +590,22 @@ impl Connection {
         Ok(())
     }
 
+    async fn on_started(&mut self) -> Result<()> {
+        if self.ha_running {
+            return Ok(());
+        }
+        self.ha_running = true;
+        if wake_is_idle(&self.runs) {
+            self.start_wake_run().await?;
+        }
+        Ok(())
+    }
+
     async fn start_wake_run(&mut self) -> Result<()> {
         let audio = self.wake_audio.clone();
-        if let Some(audio) = audio {
+        if let Some(audio) = audio
+            && self.ha_running
+        {
             self.start_run(RunKind::Wake, None, Some(audio)).await?;
         }
         Ok(())

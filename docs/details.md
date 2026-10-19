@@ -100,8 +100,10 @@ the login flow, the websocket API and Assist pipelines.
   in KWallet (any Secret Service); Settings → Sign out revokes it.
 - Talk with the button, the tray menu, or the shortcut Plasma asks for on first start (Ctrl+Alt+H
   by default; change it in System Settings → Keyboard → Shortcuts). HA hears when you stop talking.
-- Settings: the microphone (Bluetooth mics switch the device to call audio while in use), and
-  "Always listen", which streams the mic to HA's wake word engine all the time.
+- Settings: the assistant (HA's preferred one unless you pick another), the microphone
+  (Bluetooth mics switch the device to call audio while in use), and "Always listen", which
+  streams the mic to HA's wake word engine all the time. Always listen waits until HA has
+  finished starting, so it never holds up HA's startup.
 - Closing the window keeps it in the tray, and autostart starts it there.
 - End-to-end check against a test HA with the `demo` integration, whisper, piper and
   openwakeword (login with MFA, every kind of button, typed, spoken and wake word commands):
