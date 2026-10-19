@@ -72,9 +72,9 @@ gitignored. Anything worth versioning goes in `packages/*.yaml`.
        ha-tuya-ir-climate-$SHA/custom_components/tuya_ir_climate
      docker restart homeassistant
      ```
-   - **Home fan**: in Smart Life, create four Tap-to-Run scenes that each press one DIY button,
-     named `Home fan power`, `Home fan speed 1`, `Home fan speed 2` and `Home fan speed 3`.
-     `packages/fans.yaml` turns them into `fan.home_fan`.
+   - **Home fan**: in Smart Life, create five Tap-to-Run scenes that each press one DIY button,
+     named `Fan off` and `Set Fan 1` to `Set Fan 4`. `packages/fans.yaml` turns them into
+     `fan.home_fan`. Scenes added after the Tuya integration need it reloaded.
    - **Second house fan**: put its switch's entity id into `packages/fans.yaml`.
 
 **Done when** every current device can be controlled from HA's web UI.
