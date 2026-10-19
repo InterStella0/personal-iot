@@ -44,8 +44,9 @@ gitignored. Anything worth versioning goes in `packages/*.yaml`.
    ```sh
    docker compose up -d
    ```
-   It only listens on the server's loopback, so open it through an SSH tunnel:
-   `ssh -L 8123:127.0.0.1:8123 server`, then `http://localhost:8123`.
+   Open `http://stella-server:8123` from a device on the tailnet. HA only listens on the server's
+   loopback (for cloudflared) and its Tailscale address. If the server reboots and HA isn't
+   back, Docker started before Tailscale had the address: run `docker compose up -d` again.
 3. Create the owner account and **turn on multi-factor auth** (Profile → Security) before the
    tunnel below goes live.
 4. Install [HACS](https://hacs.xyz/docs/use/download/download/) (Container install), restart, then
@@ -118,8 +119,8 @@ A pass prints only "Testing configuration"; errors are listed with their file an
 - [typesafe-assist](https://github.com/JanOstrowka/typesafe-assist) (Jev) as the main agent, with the
   Claude agent as its fallback, model pinned to `jev-1.13.0`, cutoffs raised to about 0.7 / 0.6.
 - Model Context Protocol Server integration, for Claude Desktop / Claude Code over the tunnel.
-- HA Companion app on the phone, through the tunnel hostname, or `tailscale serve` on stella-server
-  for access over Tailscale only.
+- HA Companion app on the phone, through the tunnel hostname, or `http://stella-server:8123` for
+  access over Tailscale only.
 - Record 20–30 real commands and run them through `tests/jev`.
 
 ## Phase 3: decide from real voice data
