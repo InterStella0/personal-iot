@@ -15,7 +15,7 @@ server/
 └── ha-config/            mounted as /config
     ├── configuration.yaml
     ├── packages/         one YAML file per feature (tracked)
-    │   ├── fans.yaml     both fans as fan entities (IR fan through scenes, switched fan)
+    │   ├── fans.yaml     the home fan as a fan entity (IR fan through scenes)
     │   └── jev_ac.yaml   Jev decides AC on/off + mode, dry run by default
     └── secrets.yaml.example
 tests/jev/                Jev voice-routing tests (clean, garbled, gated)
@@ -31,7 +31,7 @@ gitignored. Anything worth versioning goes in `packages/*.yaml`.
 | Home | IR aircond | Tuya IR Climate |
 | Home | IR fan with DIY buttons | Tap-to-Run scenes, wrapped by `packages/fans.yaml` |
 | Second house | IR aircond | Tuya IR Climate |
-| Second house | Fan on a Tuya switch | the Tuya integration, wrapped by `packages/fans.yaml` |
+| Second house | Fan on a Tuya switch | later: its devices are offline until someone is there |
 
 1. Configure, on stella-server:
    ```sh
@@ -75,7 +75,6 @@ gitignored. Anything worth versioning goes in `packages/*.yaml`.
    - **Home fan**: in Smart Life, create five Tap-to-Run scenes that each press one DIY button,
      named `Fan off` and `Set Fan 1` to `Set Fan 4`. `packages/fans.yaml` turns them into
      `fan.home_fan`. Scenes added after the Tuya integration need it reloaded.
-   - **Second house fan**: put its switch's entity id into `packages/fans.yaml`.
 
 **Done when** every current device can be controlled from HA's web UI.
 

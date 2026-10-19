@@ -1,4 +1,4 @@
-# Both fans as fan entities, so voice, Claude and Google see a fan instead of buttons.
+# The home fan as a fan entity, so voice, Claude and Google see a fan instead of buttons.
 #
 # Home fan: an IR fan whose remote buttons are DIY buttons in Smart Life. HA can't press those
 # directly, so each button has a Tap-to-Run scene in Smart Life that presses only that button:
@@ -7,10 +7,6 @@
 # entities; reload it after adding a scene in Smart Life.
 # IR is one-way, so HA keeps an assumed state in two helpers. If someone uses the physical
 # remote, correct the helpers from the UI; changing them doesn't press anything.
-#
-# Second house fan: plugged into a Tuya switch, so it only turns on and off.
-#
-# Replace the entity ids marked CHANGE with yours (Settings > Devices & services > Entities).
 
 input_boolean:
   home_fan_on:
@@ -89,16 +85,3 @@ template:
             data:
               speed: "{{ (percentage * 4 / 100) | round(0, 'ceil') | int }}"
 
-      - name: Second house fan
-        unique_id: second_house_fan
-        # CHANGE switch.second_house_fan here and in the two actions below.
-        availability: "{{ has_value('switch.second_house_fan') }}"
-        state: "{{ is_state('switch.second_house_fan', 'on') }}"
-        turn_on:
-          - action: switch.turn_on
-            target:
-              entity_id: switch.second_house_fan
-        turn_off:
-          - action: switch.turn_off
-            target:
-              entity_id: switch.second_house_fan
