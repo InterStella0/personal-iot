@@ -1,0 +1,38 @@
+[package]
+name = "iot-desktop"
+version = "0.1.0"
+edition = "2024"
+description = "Desktop app for personal-iot's Home Assistant: device buttons and voice"
+publish = false
+
+[dependencies]
+anyhow = "1"
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }
+base64 = "0.22"
+directories = "6"
+futures = "0.3"
+iced = { version = "0.14", features = ["tokio"] }
+ksni = { version = "0.3", default-features = false, features = ["tokio"] }
+libpulse-binding = "2.30"
+libpulse-simple-binding = "2.29"
+notify-rust = { version = "4", default-features = false, features = ["z"] }
+oo7 = { version = "0.6", default-features = false, features = ["tokio", "native_crypto"] }
+png = "0.18"
+rand = "0.9"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "rustls"] }
+rodio = { version = "0.23", default-features = false, features = ["playback", "symphonia-mp3", "symphonia-wav"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+
+[dev-dependencies]
+hmac = "0.12"
+sha1 = "0.10"

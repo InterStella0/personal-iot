@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Home
+GenericName=Home Assistant
+Comment=Control the AC and fans, and talk to Home Assistant
+Exec=iot-desktop
+Icon=go-home
+Terminal=false
+Categories=Utility;
+Keywords=home;assistant;fan;aircond;voice;
+StartupWMClass=io.github.interstella0.IotDesktop

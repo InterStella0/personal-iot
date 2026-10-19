@@ -20,6 +20,9 @@ server/ha-config/www/
 # Voice models and caches
 server/data/
 
+# Rust
+desktop/target/
+
 # Python
 __pycache__/
 .venv/
