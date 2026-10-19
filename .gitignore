@@ -8,6 +8,7 @@ server/ha-config/.cloud/
 server/ha-config/home-assistant_v2.db*
 server/ha-config/*.log*
 server/ha-config/.HA_VERSION
+server/ha-config/.ha_run.lock
 server/ha-config/deps/
 server/ha-config/tts/
 server/ha-config/backups/
