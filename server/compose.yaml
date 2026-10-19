@@ -5,15 +5,17 @@ services:
     # Pinned: upgrade on purpose after reading the release notes.
     image: ghcr.io/home-assistant/home-assistant:2026.10.2
     container_name: homeassistant
-    network_mode: host # LAN discovery (mDNS, Tuya UDP) needs the host network
+    # Loopback only: cloudflared on this host is the way in from outside. Devices are reached
+    # through Tuya's cloud, so HA needs no LAN access.
+    ports:
+      - 127.0.0.1:8123:8123
     environment:
       TZ: ${TZ:-Asia/Kuala_Lumpur}
     volumes:
       - ./ha-config:/config
       - /etc/localtime:/etc/localtime:ro
-      - /run/dbus:/run/dbus:ro # Bluetooth devices
     restart: unless-stopped
-    # Add `privileged: true` (or a `devices:` entry) once a Zigbee/Thread USB dongle is plugged in.
+    # Zigbee/Matter radios need hardware at the house, not on this server.
 
   # Phase 2: `docker compose --profile voice up -d`, then add both in HA through the Wyoming integration.
   whisper:
@@ -25,10 +27,9 @@ services:
     # Check that this image ships the [hass] extra before relying on it.
     #   command: >-
     #     --model ${WHISPER_MODEL:-small} --language ${WHISPER_LANGUAGE:-en}
-    #     --hass-api http://host.docker.internal:8123/api
+    #     --hass-api http://homeassistant:8123/api
     # environment:
     #   WYO_WHISPER_HASS_TOKEN_FILE: /run/secrets/whisper_hass_token
-    # extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./data/whisper:/data
     ports:
@@ -44,3 +45,11 @@ services:
     ports:
       - 127.0.0.1:10200:10200
     restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        # Fixed, so configuration.yaml can trust the gateway: requests through the published
+        # port (from cloudflared) reach HA from 172.31.0.1.
+        - subnet: 172.31.0.0/24

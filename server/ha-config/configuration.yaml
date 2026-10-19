@@ -7,11 +7,13 @@ homeassistant:
 http:
   # Cloudflare Tunnel forwards requests, so HA must trust the proxy's address. A request
   # carrying X-Forwarded-For from an address not listed here is rejected with 400.
+  #
+  # HA 2026.8+ imports this block once, on first start, into Settings > System > Network
+  # (.storage/http), then ignores it and raises a repair asking to remove it. It stays here
+  # so a fresh install starts with the right settings. Change it later in the UI.
   use_x_forwarded_for: true
   trusted_proxies:
-    - 127.0.0.1 # cloudflared on this host
-    - ::1
-    # If cloudflared runs on another machine, add its address here, e.g. its Tailscale IP.
+    - 172.31.0.1 # gateway of the compose network: cloudflared's requests arrive from here
 
 # Written by the UI editors.
 automation: !include automations.yaml
