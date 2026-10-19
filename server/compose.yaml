@@ -50,6 +50,6 @@ networks:
   default:
     ipam:
       config:
-        # Fixed, so configuration.yaml can trust the gateway: requests through the published
+        # Fixed, so http-seed.json can trust the gateway: requests through the published
         # port (from cloudflared) reach HA from 172.31.0.1.
         - subnet: 172.31.0.0/24

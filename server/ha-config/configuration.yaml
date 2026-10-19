@@ -4,16 +4,9 @@ homeassistant:
   # One YAML file per feature in packages/, e.g. packages/jev_ac.yaml.
   packages: !include_dir_named packages
 
-http:
-  # Cloudflare Tunnel forwards requests, so HA must trust the proxy's address. A request
-  # carrying X-Forwarded-For from an address not listed here is rejected with 400.
-  #
-  # HA 2026.8+ imports this block once, on first start, into Settings > System > Network
-  # (.storage/http), then ignores it and raises a repair asking to remove it. It stays here
-  # so a fresh install starts with the right settings. Change it later in the UI.
-  use_x_forwarded_for: true
-  trusted_proxies:
-    - 172.31.0.1 # gateway of the compose network: cloudflared's requests arrive from here
+# No `http:` block: since HA 2026.8 the HTTP settings, including the reverse proxy trust the
+# Cloudflare Tunnel needs, live in .storage/http. A YAML block is only imported as a 5-minute
+# trial that reverts unless an admin confirms it, so the README seeds .storage/http instead.
 
 # Written by the UI editors.
 automation: !include automations.yaml

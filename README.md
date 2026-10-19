@@ -11,6 +11,7 @@ integration such as tuya-local would need an HA in each house.
 server/
 ├── compose.yaml          HA, plus whisper + piper under the `voice` profile
 ├── .env.example
+├── http-seed.json        HA's HTTP settings (tunnel proxy trust), copied in before the first start
 └── ha-config/            mounted as /config
     ├── configuration.yaml
     ├── packages/         one YAML file per feature (tracked)
@@ -37,6 +38,7 @@ gitignored. Anything worth versioning goes in `packages/*.yaml`.
    gh repo clone InterStella0/personal-iot ~/personal-iot && cd ~/personal-iot/server
    cp .env.example .env
    cp ha-config/secrets.yaml.example ha-config/secrets.yaml   # Jev key, with the "Bearer " prefix
+   mkdir -p ha-config/.storage && cp http-seed.json ha-config/.storage/http   # see HTTP settings
    ```
 2. Start HA:
    ```sh
@@ -80,10 +82,20 @@ gitignored. Anything worth versioning goes in `packages/*.yaml`.
 
 cloudflared already runs on stella-server (a systemd service, configured from the Cloudflare
 dashboard). Once multi-factor auth is on, add a public hostname to the tunnel pointing at
-`http://127.0.0.1:8123`. Requests through the published port reach HA from the compose network's
-gateway, `172.31.0.1`, which is why that address is HA's trusted proxy; anything else forwarding
-requests gets `400 Bad Request`. Don't put Cloudflare Access in front of HA: it breaks the
-Companion app and Claude's MCP connector. Use HA's own login with MFA.
+`http://127.0.0.1:8123`. Don't put Cloudflare Access in front of HA: it breaks the Companion app
+and Claude's MCP connector. Use HA's own login with MFA.
+
+### HTTP settings
+
+Since HA 2026.8 these live in `.storage/http`, not YAML. `http-seed.json` sets what the tunnel
+needs: trust `X-Forwarded-For` from `172.31.0.1`, the compose network's gateway, which is where
+requests through the published port come from. Without it, the tunnel gets `400 Bad Request`.
+Check it with `docker exec homeassistant cat /config/.storage/http`: `stable` should show
+`"use_x_forwarded_for": true` and `172.31.0.1/32`.
+
+Don't put an `http:` block back in `configuration.yaml`: HA imports it as a trial that reverts
+after 5 minutes unless an admin confirms it. Changes saved in Settings → System → Network are
+trials too, confirmed in the UI. To edit the file by hand, stop HA first.
 
 ### Checking the config
 
@@ -92,15 +104,8 @@ docker run --rm -v "$PWD/ha-config":/config --entrypoint python \
   ghcr.io/home-assistant/home-assistant:2026.10.2 -m homeassistant --script check_config -c /config
 ```
 
-HA 2026.8+ keeps the `http:` settings out of YAML: on first start it copies the block into
-`.storage/http`, then raises a repair asking you to remove it. Leave the block, so a fresh install
-starts right, and check that the copy took, or the tunnel gets 400s:
-
-```sh
-docker exec homeassistant cat /config/.storage/http
-```
-
-It should show `"use_x_forwarded_for": true` and `172.31.0.1` in `trusted_proxies`.
+A pass prints only "Testing configuration"; errors are listed with their file and line. Add
+`--info all` to see "Successful config (all)" and everything that loaded.
 
 ## Phase 2: voice
 
