@@ -12,7 +12,18 @@ ashpd = { version = "0.13", default-features = false, features = ["tokio", "glob
 base64 = "0.22"
 directories = "6"
 futures = "0.3"
-iced = { version = "0.14", features = ["tokio"] }
+# CPU rendering (tiny-skia) only: the GPU renderer loads every GPU driver into the process,
+# about 95 MB, to draw a window of buttons.
+iced = { version = "0.14", default-features = false, features = [
+    "tiny-skia",
+    "crisp",
+    "web-colors",
+    "thread-pool",
+    "linux-theme-detection",
+    "x11",
+    "wayland",
+    "tokio",
+] }
 ksni = { version = "0.3", default-features = false, features = ["tokio"] }
 libpulse-binding = "2.30"
 libpulse-simple-binding = "2.29"

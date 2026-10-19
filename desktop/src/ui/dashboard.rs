@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::{Message, style};
 
-const CARD_WIDTH: f32 = 340.0;
+const CARD_WIDTH: f32 = 320.0;
 const OTHER: &str = "Other";
 
 /// Areas in name order with "Other" last, each with its devices in name order.
@@ -54,20 +54,25 @@ pub fn view<'a>(
             .into();
     }
     // Room on the right so the scrollbar doesn't cover the last column of cards.
-    let mut content = column![].spacing(22).padding(Padding {
+    let mut content = column![].spacing(22).width(Length::Fill).padding(Padding {
         top: 4.0,
         right: 20.0,
         bottom: 4.0,
         left: 4.0,
     });
     for (area, states) in sections {
+        // Fill the width, or the cards wrap at whatever width the widest row happened to need.
         let cards = Row::with_children(states.into_iter().map(card))
             .spacing(16)
+            .width(Length::Fill)
             .wrap()
             .vertical_spacing(16);
         content = content.push(column![text(area).size(20), cards].spacing(10));
     }
-    scrollable(content).height(Length::Fill).into()
+    scrollable(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn status(state: &State) -> String {

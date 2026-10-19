@@ -93,7 +93,9 @@ trials too. To edit the file by hand, stop HA first.
 ## Desktop app
 
 `desktop/` is Home, a native Rust app ([iced](https://iced.rs)). It talks only to HA's own APIs:
-the login flow, the websocket API and Assist pipelines.
+the login flow, the websocket API and Assist pipelines. It draws on the CPU (iced's tiny-skia
+renderer): the GPU renderer would load every GPU driver into the app, about 95 MB, to draw a
+window of buttons. It uses about 35 MB.
 
 - Needs Rust and libpulse (PipeWire's pulse server works). Tested on KDE Plasma 6 (Wayland).
 - First start: sign in with your HA username, password and authenticator code. The login is kept
