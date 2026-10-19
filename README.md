@@ -117,12 +117,15 @@ A pass prints only "Testing configuration"; errors are listed with their file an
 - Anthropic integration (API key, Claude Haiku 5.5, thinking effort low) as the Claude agent.
 - [typesafe-assist](https://github.com/JanOstrowka/typesafe-assist) (Jev) as the main agent, with the
   Claude agent as its fallback, model pinned to `jev-1.13.0`, cutoffs raised to about 0.7 / 0.6.
-  Install the reviewed v0.2.1 commit, restart, then add it with the TypeSafe key:
+  Install the reviewed v0.2.1 commit with the HA 2026.10 fix from `patches/`, restart, then add
+  it with the TypeSafe key:
   ```sh
   SHA=7a771aab9933df2b7b7d57eb8fdb3f40f634ac12
   curl -fsSL https://github.com/JanOstrowka/typesafe-assist/archive/$SHA.tar.gz | tar -xz \
     -C ha-config/custom_components --strip-components=2 \
     typesafe-assist-$SHA/custom_components/typesafe_conversation
+  patch -d ha-config/custom_components/typesafe_conversation -p1 \
+    < patches/typesafe_conversation-ha-2026.10.patch
   docker restart homeassistant
   ```
   Every command sends TypeSafe the text plus the names and areas of everything exposed to Assist

@@ -1,0 +1,14 @@
+typesafe-assist v0.2.1 on HA 2026.10: ToolResultContent takes result=llm.ToolResult(...) now,
+not tool_result=..., so every command Jev ran crashed after running.
+
+--- a/conversation.py
++++ b/conversation.py
+@@ -406,7 +406,7 @@
+                 agent_id=user_input.agent_id,
+                 tool_call_id=tool_input.id,
+                 tool_name=tool_input.tool_name,
+-                tool_result=llm.IntentResponseDict(intent_response),
++                result=llm.ToolResult(data=llm.IntentResponseDict(intent_response)),
+             )
+         )
+         speech = intent_response.speech.get("plain", {}).get("speech", "")
