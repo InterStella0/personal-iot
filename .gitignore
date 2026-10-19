@@ -1,0 +1,24 @@
+# Secrets
+.env
+server/ha-config/secrets.yaml
+
+# Home Assistant runtime state: UI-created config, auth tokens, history database, logs
+server/ha-config/.storage/
+server/ha-config/.cloud/
+server/ha-config/home-assistant_v2.db*
+server/ha-config/*.log*
+server/ha-config/.HA_VERSION
+server/ha-config/deps/
+server/ha-config/tts/
+server/ha-config/backups/
+server/ha-config/custom_components/
+server/ha-config/blueprints/
+server/ha-config/www/
+
+# Voice models and caches
+server/data/
+
+# Python
+__pycache__/
+.venv/
+tests/jev/results/

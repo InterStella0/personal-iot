@@ -1,0 +1,46 @@
+name: personal-iot
+
+services:
+  homeassistant:
+    # Pinned: upgrade on purpose after reading the release notes.
+    image: ghcr.io/home-assistant/home-assistant:2026.10.2
+    container_name: homeassistant
+    network_mode: host # LAN discovery (mDNS, Tuya UDP) needs the host network
+    environment:
+      TZ: ${TZ:-Asia/Kuala_Lumpur}
+    volumes:
+      - ./ha-config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro # Bluetooth devices
+    restart: unless-stopped
+    # Add `privileged: true` (or a `devices:` entry) once a Zigbee/Thread USB dongle is plugged in.
+
+  # Phase 2: `docker compose --profile voice up -d`, then add both in HA through the Wyoming integration.
+  whisper:
+    profiles: [voice]
+    image: rhasspy/wyoming-whisper:3.8.1
+    # A standard (not distil) model, so the HA name biasing below works. tiny-int8 is too weak for accents.
+    command: --model ${WHISPER_MODEL:-small} --language ${WHISPER_LANGUAGE:-en}
+    # Biases transcription toward the names of devices exposed to Assist ("kipas", "aircond").
+    # Check that this image ships the [hass] extra before relying on it.
+    #   command: >-
+    #     --model ${WHISPER_MODEL:-small} --language ${WHISPER_LANGUAGE:-en}
+    #     --hass-api http://host.docker.internal:8123/api
+    # environment:
+    #   WYO_WHISPER_HASS_TOKEN_FILE: /run/secrets/whisper_hass_token
+    # extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./data/whisper:/data
+    ports:
+      - 127.0.0.1:10300:10300
+    restart: unless-stopped
+
+  piper:
+    profiles: [voice]
+    image: rhasspy/wyoming-piper:2.5.2
+    command: --voice ${PIPER_VOICE:-en_US-lessac-medium}
+    volumes:
+      - ./data/piper:/data
+    ports:
+      - 127.0.0.1:10200:10200
+    restart: unless-stopped
