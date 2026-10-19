@@ -1,0 +1,19 @@
+default_config:
+
+homeassistant:
+  # One YAML file per feature in packages/, e.g. packages/jev_ac.yaml.
+  packages: !include_dir_named packages
+
+http:
+  # Cloudflare Tunnel forwards requests, so HA must trust the proxy's address. A request
+  # carrying X-Forwarded-For from an address not listed here is rejected with 400.
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1 # cloudflared on this host
+    - ::1
+    # If cloudflared runs on another machine, add its address here, e.g. its Tailscale IP.
+
+# Written by the UI editors.
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml

@@ -1,0 +1,141 @@
+# Jev decides whether the AC should run, and in which mode.
+#
+# Every 10 minutes the automation sends the room's state to Jev and asks two questions.
+# It only acts on confident answers (on > 0.75, off < 0.25), switches at most once per
+# 30 minutes, and starts in dry run: decisions go to the logbook until you turn
+# input_boolean.jev_ac_dry_run off.
+#
+# Replace the entity ids marked CHANGE with yours (Settings > Devices & services > Entities).
+# Needs `jev_authorization: "Bearer <your TypeSafe key>"` in secrets.yaml.
+
+input_boolean:
+  jev_ac_enabled:
+    name: Jev controls AC
+    icon: mdi:robot
+  jev_ac_dry_run:
+    name: Jev AC dry run (log only)
+    icon: mdi:test-tube
+    initial: true
+
+sensor:
+  - platform: history_stats
+    name: AC hours today
+    entity_id: climate.air_conditioner # CHANGE
+    state: ["cool", "auto", "dry", "fan_only"]
+    type: time
+    start: "{{ today_at() }}"
+    end: "{{ now() }}"
+
+rest_command:
+  jev_system_one:
+    url: https://api.typesafe.ai/v1/systemone
+    method: post
+    headers:
+      Authorization: !secret jev_authorization
+    content_type: application/json
+    payload: "{{ body | to_json }}"
+    timeout: 15
+
+script:
+  jev_ac_decide:
+    alias: Ask Jev about the AC
+    mode: single
+    variables:
+      ac: climate.air_conditioner # CHANGE
+      room: >-
+        {{ {
+          "local_time": now().strftime("%A %H:%M"),
+          "room_temperature_c": states("sensor.bedroom_temperature") | float(none),
+          "room_humidity_pct": states("sensor.bedroom_humidity") | float(none),
+          "outdoor_temperature_c": state_attr("weather.home", "temperature"),
+          "people_home": states("zone.home") | int(0),
+          "ac": {
+            "running": states(ac) not in ["off", "unavailable", "unknown"],
+            "mode": states(ac),
+            "target_c": state_attr(ac, "temperature"),
+            "minutes_since_last_change": ((now() - states[ac].last_changed).total_seconds() / 60) | round,
+            "hours_on_today": states("sensor.ac_hours_today") | float(0),
+          },
+        } }}
+      # CHANGE above: sensor.bedroom_temperature, sensor.bedroom_humidity, weather.home
+      body:
+        model: jev-1.13.0 # pinned: thresholds are tuned per version
+        state: "{{ room }}"
+        questions:
+          should_run:
+            type: noul
+            instructions: >-
+              Using the room conditions in this state, should the air conditioner be running
+              right now? Weigh comfort for anyone at home against wasting electricity.
+            criteria:
+              "true": Someone is home and the room is uncomfortably warm or humid, or will be soon.
+              "false": Nobody is home, or the room is already comfortable without cooling.
+          mode:
+            type: choice
+            instructions: If the air conditioner runs now, which mode suits the room conditions best?
+            criteria:
+              cool: The room is warm and needs its temperature brought down.
+              dry: The temperature is fine but the air is humid and sticky.
+              fan_only: The room is only slightly warm and moving air is enough.
+              auto: Conditions are mixed or changing and the unit should decide.
+    sequence:
+      - action: rest_command.jev_system_one
+        data:
+          body: "{{ body }}"
+        response_variable: jev
+      - if: "{{ jev.status != 200 }}"
+        then:
+          # Fail safe: no answer means no change.
+          - action: logbook.log
+            data:
+              name: Jev AC
+              message: "Request failed with HTTP {{ jev.status }}: {{ jev.content }}"
+          - stop: Jev request failed
+      - variables:
+          p_run: "{{ jev.content.answers.should_run.noul | float }}"
+          mode: "{{ jev.content.answers['mode'].choice }}"
+          mode_confidence: "{{ jev.content.answers['mode'].confidence | float }}"
+          running: "{{ room.ac.running }}"
+          settled: "{{ room.ac.minutes_since_last_change >= 30 }}"
+          decision: >-
+            {%- if not settled -%} hold_recently_changed
+            {%- elif p_run > 0.75 and (not running or room.ac.mode != mode) -%} run
+            {%- elif p_run < 0.25 and running -%} stop
+            {%- else -%} hold
+            {%- endif -%}
+      - action: logbook.log
+        data:
+          name: Jev AC
+          message: >-
+            {{ decision }}{{ ' (dry run)' if is_state('input_boolean.jev_ac_dry_run', 'on') }}:
+            P(run)={{ p_run | round(2) }}, mode={{ mode }} ({{ mode_confidence | round(2) }}),
+            room {{ room.room_temperature_c }}°C / {{ room.room_humidity_pct }}%,
+            model {{ jev.content.model }}
+      - if: "{{ is_state('input_boolean.jev_ac_dry_run', 'off') }}"
+        then:
+          - choose:
+              - conditions: "{{ decision == 'run' }}"
+                sequence:
+                  - action: climate.set_hvac_mode
+                    target:
+                      entity_id: "{{ ac }}"
+                    data:
+                      hvac_mode: "{{ mode }}"
+              - conditions: "{{ decision == 'stop' }}"
+                sequence:
+                  - action: climate.turn_off
+                    target:
+                      entity_id: "{{ ac }}"
+
+automation:
+  - id: jev_ac_every_10_minutes
+    alias: Jev AC decision
+    triggers:
+      - trigger: time_pattern
+        minutes: "/10"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.jev_ac_enabled
+        state: "on"
+    actions:
+      - action: script.jev_ac_decide
