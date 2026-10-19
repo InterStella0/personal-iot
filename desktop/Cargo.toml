@@ -3,6 +3,7 @@ name = "iot-desktop"
 version = "0.1.0"
 edition = "2024"
 description = "Desktop app for personal-iot's Home Assistant: device buttons and voice"
+license = "MIT"
 publish = false
 
 [dependencies]
