@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
-use super::assist::{self, RunEvent, Start, VoiceEvent};
+use super::assist::{self, Assistant, RunEvent, Start, VoiceEvent};
 use super::auth::{self, RefreshError};
 use super::entity::{Registry, State};
 use crate::audio::{mic, play};
@@ -46,6 +46,11 @@ pub enum Event {
     StateChanged {
         entity_id: String,
         state: Option<State>,
+    },
+    /// The assistants set up in HA, and which one HA prefers.
+    Assistants {
+        list: Vec<Assistant>,
+        preferred: Option<String>,
     },
     Voice(VoiceEvent),
     /// A button press failed.
@@ -89,6 +94,8 @@ pub enum Command {
     StopListening,
     /// `Some`: keep a wake word run going on this audio. `None`: stop.
     AlwaysListen(Option<Audio>),
+    /// Which assistant handles commands; `None` is HA's preferred one.
+    UseAssistant(Option<String>),
 }
 
 impl Command {
@@ -147,6 +154,7 @@ enum Pending {
     Devices,
     Entities,
     States,
+    Assistants,
     Subscribe,
     Call(String),
     Run,
@@ -200,6 +208,7 @@ struct Connection {
     audio_tx: mpsc::Sender<(u64, Vec<u8>)>,
     wake_audio: Option<Audio>,
     wake_restart: Option<Instant>,
+    pipeline: Option<String>,
     conversation_id: Option<String>,
     server: String,
     http: reqwest::Client,
@@ -286,6 +295,7 @@ impl Connection {
             audio_tx,
             wake_audio: None,
             wake_restart: None,
+            pipeline: None,
             conversation_id: None,
             server: server.to_owned(),
             http: http.clone(),
@@ -309,6 +319,12 @@ impl Connection {
             .await?;
         connection
             .request(json!({"type": "get_states"}), Pending::States)
+            .await?;
+        connection
+            .request(
+                json!({"type": "assist_pipeline/pipeline/list"}),
+                Pending::Assistants,
+            )
             .await?;
         let id = connection
             .request(
@@ -438,6 +454,10 @@ impl Connection {
                 }
                 self.maybe_emit_snapshot().await;
             }
+            Pending::Assistants if success => {
+                let (list, preferred) = assist::parse_assistants(&result);
+                self.emit(Event::Assistants { list, preferred }).await;
+            }
             Pending::Subscribe if !success => bail!("couldn't subscribe to state changes: {error}"),
             Pending::Call(what) if !success => {
                 self.emit(Event::Error(format!("Couldn't {what}: {error}")))
@@ -540,6 +560,13 @@ impl Connection {
                     self.start_wake_run().await?;
                 }
             }
+            Command::UseAssistant(pipeline) => {
+                if pipeline != self.pipeline {
+                    // A conversation belongs to one agent.
+                    self.conversation_id = None;
+                }
+                self.pipeline = pipeline;
+            }
         }
         Ok(())
     }
@@ -563,7 +590,12 @@ impl Connection {
             RunKind::Wake => Start::WakeWord,
             RunKind::Text => Start::Text,
         };
-        let request = assist::run_request(start, text, self.conversation_id.as_deref());
+        let request = assist::run_request(
+            start,
+            text,
+            self.pipeline.as_deref(),
+            self.conversation_id.as_deref(),
+        );
         let id = self.request(request, Pending::Run).await?;
         self.runs.insert(
             id,

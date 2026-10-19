@@ -49,7 +49,40 @@ pub enum Start {
     Text,
 }
 
-pub fn run_request(start: Start, text: Option<&str>, conversation_id: Option<&str>) -> Value {
+/// An assistant ("pipeline") set up in HA: its agent, speech-to-text and voice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Assistant {
+    pub id: String,
+    pub name: String,
+}
+
+/// The result of `assist_pipeline/pipeline/list`: every assistant, and HA's preferred one.
+pub fn parse_assistants(result: &Value) -> (Vec<Assistant>, Option<String>) {
+    let assistants = result["pipelines"]
+        .as_array()
+        .map(|pipelines| {
+            pipelines
+                .iter()
+                .filter_map(|pipeline| {
+                    Some(Assistant {
+                        id: pipeline["id"].as_str()?.to_owned(),
+                        name: pipeline["name"].as_str()?.to_owned(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let preferred = result["preferred_pipeline"].as_str().map(str::to_owned);
+    (assistants, preferred)
+}
+
+/// `pipeline`: an assistant id, or `None` for HA's preferred assistant.
+pub fn run_request(
+    start: Start,
+    text: Option<&str>,
+    pipeline: Option<&str>,
+    conversation_id: Option<&str>,
+) -> Value {
     // Typed commands only need the reply text; spoken ones get spoken back.
     let (stage, end, input) = match start {
         // No silence timeout: wait for the wake word as long as the run lasts.
@@ -74,6 +107,9 @@ pub fn run_request(start: Start, text: Option<&str>, conversation_id: Option<&st
     if start == Start::WakeWord {
         // HA ends a run after 5 minutes by default; the app starts a new one when it ends.
         request["timeout"] = 3600.into();
+    }
+    if let Some(id) = pipeline {
+        request["pipeline"] = id.into();
     }
     if let Some(id) = conversation_id {
         request["conversation_id"] = id.into();
@@ -210,6 +246,22 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_assistant_list() {
+        let (assistants, preferred) = parse_assistants(&json!({
+            "pipelines": [{"id": "a", "name": "Home Assistant"}, {"id": "b", "name": "Voice-Jev"}],
+            "preferred_pipeline": "a"
+        }));
+        assert_eq!(
+            assistants,
+            [
+                Assistant { id: "a".into(), name: "Home Assistant".into() },
+                Assistant { id: "b".into(), name: "Voice-Jev".into() },
+            ]
+        );
+        assert_eq!(preferred.as_deref(), Some("a"));
+    }
+
+    #[test]
     fn frames_prefix_the_handler_and_end_with_an_empty_payload() {
         assert_eq!(frame(7, &[1, 2, 3]), [7, 1, 2, 3]);
         assert_eq!(frame(7, &[]), [7]);
@@ -217,16 +269,18 @@ mod tests {
 
     #[test]
     fn builds_requests() {
-        let speech = run_request(Start::Speech, None, Some("c1"));
+        let speech = run_request(Start::Speech, None, Some("p1"), Some("c1"));
         assert_eq!(speech["start_stage"], "stt");
         assert_eq!(speech["input"]["sample_rate"], 16000);
+        assert_eq!(speech["pipeline"], "p1");
         assert_eq!(speech["conversation_id"], "c1");
-        let text = run_request(Start::Text, Some("turn off the fan"), None);
+        let text = run_request(Start::Text, Some("turn off the fan"), None, None);
         assert_eq!(text["start_stage"], "intent");
         assert_eq!(text["end_stage"], "intent");
         assert_eq!(text["input"]["text"], "turn off the fan");
         assert!(text.get("conversation_id").is_none());
-        let wake = run_request(Start::WakeWord, None, None);
+        assert!(text.get("pipeline").is_none());
+        let wake = run_request(Start::WakeWord, None, None, None);
         assert_eq!(wake["start_stage"], "wake_word");
         assert_eq!(wake["input"]["timeout"], 0);
         assert_eq!(wake["timeout"], 3600);

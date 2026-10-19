@@ -14,6 +14,8 @@ pub struct Config {
     pub mic: Option<String>,
     /// Stream the mic to HA's wake word engine all the time.
     pub wake_word: bool,
+    /// The HA assistant (pipeline id) for commands. `None` is HA's preferred one.
+    pub assistant: Option<String>,
 }
 
 impl Default for Config {
@@ -22,6 +24,7 @@ impl Default for Config {
             server: DEFAULT_SERVER.to_owned(),
             mic: None,
             wake_word: false,
+            assistant: None,
         }
     }
 }
