@@ -48,6 +48,14 @@ services:
       - 127.0.0.1:10200:10200
     restart: unless-stopped
 
+  # Wake word detection for the desktop app's "Always listen".
+  openwakeword:
+    profiles: [voice]
+    image: rhasspy/wyoming-openwakeword:2.1.0
+    ports:
+      - 127.0.0.1:10400:10400
+    restart: unless-stopped
+
 networks:
   default:
     ipam:

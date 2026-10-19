@@ -9,7 +9,7 @@ integration such as tuya-local would need an HA in each house.
 
 ```
 server/
-├── compose.yaml          HA, plus whisper + piper under the `voice` profile
+├── compose.yaml          HA, plus whisper, piper and openwakeword (`voice` profile)
 ├── .env.example
 ├── http-seed.json        HA's HTTP settings (tunnel proxy trust), copied in before the first start
 └── ha-config/            mounted as /config
@@ -18,6 +18,7 @@ server/
     │   ├── fans.yaml     the home fan as a fan entity (IR fan through scenes)
     │   └── jev_ac.yaml   Jev decides AC on/off + mode, dry run by default
     └── secrets.yaml.example
+desktop/                  Home, the desktop app (Rust): device buttons and voice
 tests/jev/                Jev voice-routing tests (clean, garbled, gated)
 ```
 
@@ -109,14 +110,17 @@ A pass prints only "Testing configuration"; errors are listed with their file an
 
 ## Phase 2: voice
 
-- `docker compose --profile voice up -d`, then add whisper (host `whisper`, port 10300) and piper
-  (`piper`, 10200) through HA's Wyoming integration. Try `WHISPER_LANGUAGE=ms` against `en` for
-  Manglish commands, and enable the commented HA name biasing in `compose.yaml`.
-- [linux-voice-assistant](https://github.com/OHF-Voice/linux-voice-assistant) on the desktop as the
-  always-listening microphone.
-- Anthropic integration (API key, Claude Haiku 5.5, thinking effort low) as the Claude agent.
+- `docker compose --profile voice up -d`, then add whisper (host `whisper`, port 10300), piper
+  (`piper`, 10200) and openwakeword (`openwakeword`, 10400) through HA's Wyoming integration.
+  Pick openwakeword as the assistant's wake word engine (wake word "Okay Nabu") for the desktop
+  app's "Always listen". Try `WHISPER_LANGUAGE=ms` against `en` for Manglish commands, and enable
+  the commented HA name biasing in `compose.yaml`.
+- The [desktop app](#desktop-app) on the PC.
+- A fallback agent: DeepSeek through the built-in llama.cpp integration (base URL
+  `https://api.deepseek.com/v1`, a chat model, not the reasoner), or Claude through the Anthropic
+  integration.
 - [typesafe-assist](https://github.com/JanOstrowka/typesafe-assist) (Jev) as the main agent, with the
-  Claude agent as its fallback, model pinned to `jev-1.13.0`, cutoffs raised to about 0.7 / 0.6.
+  fallback agent behind it, model pinned to `jev-1.13.0`, cutoffs raised to about 0.7 / 0.6.
   Install the reviewed v0.2.1 commit with the HA 2026.10 fix from `patches/`, restart, then add
   it with the TypeSafe key:
   ```sh
@@ -145,7 +149,32 @@ live once its logbook decisions look right.
 
 ## Phase 4 (optional)
 
-Custom Tauri desktop app, Google Home, Matter/Zigbee devices, retiring the old Discord bot.
+Google Home, Matter/Zigbee devices, retiring the old Discord bot.
+
+## Desktop app
+
+`desktop/` is Home, a native Rust app ([iced](https://iced.rs), no browser) for the PC: device
+cards grouped by area, a Talk button and global shortcut, typed commands, and a tray icon. It only
+talks to HA's own APIs: the login flow, the websocket API and Assist pipelines.
+
+```sh
+cd desktop && ./install.sh   # builds, installs ~/.local/bin/iot-desktop, app menu + autostart
+```
+
+- Needs Rust and libpulse (PipeWire's pulse server on Plasma).
+- First start: sign in with the HA username, password and authenticator code. The login is kept
+  in KWallet; Settings → Sign out revokes it.
+- Talk with the button, the tray menu, or the shortcut Plasma asks for on first start (Ctrl+Alt+H
+  by default; change it in System Settings → Keyboard → Shortcuts). HA hears when you stop talking.
+- Settings: the microphone (Bluetooth mics switch the device to call audio while in use), and
+  "Always listen", which streams the mic to HA's wake word engine all the time.
+- Closing the window keeps it in the tray; autostart starts it there.
+- End-to-end check against a test HA with the `demo` integration, whisper, piper and
+  openwakeword (login with MFA, every kind of button, typed, spoken and wake word commands):
+  ```sh
+  IOT_DESKTOP_MUTE=1 IOT_DESKTOP_TOKEN_FILE=/tmp/token \
+    cargo run --example smoke -- <server> <user> <password> <totp-secret>
+  ```
 
 ## Jev tests
 
