@@ -5,12 +5,12 @@ services:
     # Pinned: upgrade on purpose after reading the release notes.
     image: ghcr.io/home-assistant/home-assistant:2026.10.2
     container_name: homeassistant
-    # Loopback for cloudflared, plus stella-server's Tailscale address for the tailnet. Never
+    # Loopback for cloudflared, plus the server's Tailscale address for the tailnet. Never
     # 0.0.0.0: Docker-published ports skip ufw and would be public. Devices are reached through
     # Tuya's cloud, so HA needs no LAN access.
     ports:
       - 127.0.0.1:8123:8123
-      - 100.83.100.35:8123:8123
+      - ${TAILSCALE_IP:?set TAILSCALE_IP in .env (setup.sh does)}:8123:8123
     environment:
       TZ: ${TZ:-Asia/Kuala_Lumpur}
     volumes:
