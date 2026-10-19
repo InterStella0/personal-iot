@@ -117,6 +117,17 @@ A pass prints only "Testing configuration"; errors are listed with their file an
 - Anthropic integration (API key, Claude Haiku 5.5, thinking effort low) as the Claude agent.
 - [typesafe-assist](https://github.com/JanOstrowka/typesafe-assist) (Jev) as the main agent, with the
   Claude agent as its fallback, model pinned to `jev-1.13.0`, cutoffs raised to about 0.7 / 0.6.
+  Install the reviewed v0.2.1 commit, restart, then add it with the TypeSafe key:
+  ```sh
+  SHA=7a771aab9933df2b7b7d57eb8fdb3f40f634ac12
+  curl -fsSL https://github.com/JanOstrowka/typesafe-assist/archive/$SHA.tar.gz | tar -xz \
+    -C ha-config/custom_components --strip-components=2 \
+    typesafe-assist-$SHA/custom_components/typesafe_conversation
+  docker restart homeassistant
+  ```
+  Every command sends TypeSafe the text plus the names and areas of everything exposed to Assist
+  (and their states, if "include state" is on: leave it off). It acts without asking for
+  confirmation, so don't expose locks, garage doors or scripts that matter.
 - Model Context Protocol Server integration, for Claude Desktop / Claude Code over the tunnel.
 - HA Companion app on the phone, through the tunnel hostname, or `http://stella-server:8123` for
   access over Tailscale only.
