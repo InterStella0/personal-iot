@@ -126,14 +126,17 @@ A pass prints only "Testing configuration"; errors are listed with their file an
 - **Tailscale**: `http://<server>:8123` works from any device on the tailnet. This is how the
   phone and the desktop app connect.
 - **Cloudflare Tunnel** (optional, once MFA is on): with cloudflared on the server, point a public
-  hostname at `http://127.0.0.1:8123`. Don't put Cloudflare Access in front of HA: it breaks the
-  Companion app. Use HA's own login with MFA.
+  hostname at `http://127.0.0.1:8123`, then set it as the Internet URL under Settings → System →
+  Network. Don't put Cloudflare Access in front of HA: it breaks the Companion app. HA's own login
+  with MFA protects it, and an IP that fails to log in 5 times is banned. To lift a ban, delete its
+  line from `ha-config/ip_bans.yaml` and restart HA.
 
 ### HTTP settings
 
 Since HA 2026.8 these live in `.storage/http`, not YAML. `http-seed.json` sets what the tunnel
 needs: trust `X-Forwarded-For` from `172.31.0.1`, the compose network's gateway, where requests
-through the published port come from. Without it, the tunnel gets `400 Bad Request`. Check it with
+through the published port come from. Without it, the tunnel gets `400 Bad Request`, and a login
+ban would hit the tunnel itself instead of the visitor. It also bans an IP after 5 failed logins. Check it with
 `docker exec homeassistant cat /config/.storage/http`: `stable` should show
 `"use_x_forwarded_for": true` and `172.31.0.1/32`.
 
