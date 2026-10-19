@@ -70,4 +70,6 @@ tests/jev/                voice-routing tests
 ## License
 
 [MIT](LICENSE). The patch in `server/patches/` changes
-[typesafe-assist](https://github.com/JanOstrowka/typesafe-assist), which keeps its own terms.
+[typesafe-assist](https://github.com/JanOstrowka/typesafe-assist), which keeps its own terms. The
+desktop app bundles the [Inter](https://rsms.me/inter/) font (SIL Open Font License) and
+[Lucide](https://lucide.dev) icons (ISC); their licences are in `desktop/assets/`.

@@ -28,6 +28,17 @@ impl State {
             .unwrap_or(&self.entity_id)
     }
 
+    /// An entity HA only remembers: its integration no longer provides it (e.g. a removed
+    /// template). HA's own UI calls these "not provided".
+    pub fn orphaned(&self) -> bool {
+        self.attributes.get("restored").and_then(Value::as_bool) == Some(true)
+    }
+
+    /// A device the app shows a control for.
+    pub fn controllable(&self) -> bool {
+        CONTROLLABLE.contains(&self.domain()) && !self.orphaned()
+    }
+
     pub fn available(&self) -> bool {
         !matches!(self.state.as_str(), "unavailable" | "unknown")
     }
@@ -192,6 +203,17 @@ mod tests {
         assert_eq!(speed_for_percentage(33.0, 3), 1);
         assert_eq!(speed_for_percentage(34.0, 3), 2);
         assert_eq!(speed_for_percentage(100.0, 3), 3);
+    }
+
+    #[test]
+    fn removed_entities_are_not_controllable() {
+        let gone: State = serde_json::from_value(json!({
+            "entity_id": "fan.second_house_fan", "state": "unavailable",
+            "attributes": {"restored": true, "friendly_name": "Second house fan"}
+        }))
+        .unwrap();
+        assert!(gone.orphaned() && !gone.controllable());
+        assert!(fan(50.0, 25.0, "on").controllable());
     }
 
     #[test]

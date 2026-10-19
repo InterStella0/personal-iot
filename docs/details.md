@@ -95,7 +95,13 @@ trials too. To edit the file by hand, stop HA first.
 `desktop/` is Home, a native Rust app ([iced](https://iced.rs)). It talks only to HA's own APIs:
 the login flow, the websocket API and Assist pipelines. It draws on the CPU (iced's tiny-skia
 renderer): the GPU renderer would load every GPU driver into the app, about 95 MB, to draw a
-window of buttons. It uses about 35 MB.
+window of buttons. It uses about 40 MB.
+
+The look follows Apple's Home app and Home Assistant's Mushroom cards: dark tiles with an icon
+that lights up in the device's colour when it's on (a light's own colour, for RGB lights),
+segmented controls for modes and speeds, and room filters. It uses the Inter font and Lucide
+icons, bundled in `desktop/assets/`. Entities whose integration no longer provides them (HA
+shows them as "not provided") are hidden.
 
 - Needs Rust and libpulse (PipeWire's pulse server works). Tested on KDE Plasma 6 (Wayland).
 - First start: sign in with your HA username, password and authenticator code. The login is kept

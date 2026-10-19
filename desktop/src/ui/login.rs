@@ -1,11 +1,12 @@
 //! Signing in: server, username and password, then the authenticator code if HA asks.
 
-use iced::widget::{button, column, container, text, text_input};
+use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Element, Length, Task};
 use iot_desktop::ha::auth::{self, LoginFlow, Step};
 use iot_desktop::ha::store;
 use serde_json::{Map, Value};
 
+use super::icon::{Icon, icon};
 use super::style;
 
 #[derive(Debug, Clone)]
@@ -167,36 +168,103 @@ impl Login {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let input = |placeholder, value: &str, on_input: fn(String) -> Message| {
-            text_input(placeholder, value)
-                .on_input_maybe((!self.busy).then_some(on_input))
-                .on_submit(Message::Submit)
-                .padding(10)
-                .size(16)
+        let field = |label: &'static str,
+                     placeholder: &'static str,
+                     value: &str,
+                     on_input: fn(String) -> Message| {
+            column![
+                text(label).font(style::MEDIUM).size(13).style(style::muted),
+                text_input(placeholder, value)
+                    .on_input_maybe((!self.busy).then_some(on_input))
+                    .on_submit(Message::Submit)
+                    .padding([12, 14])
+                    .size(15)
+                    .style(style::input(12.0)),
+            ]
+            .spacing(6)
         };
+        let (glyph, title, subtitle) = if self.asking_code {
+            (
+                Icon::ShieldCheck,
+                "Two-factor login",
+                "Enter the 6-digit code from your authenticator app.",
+            )
+        } else {
+            (
+                Icon::House,
+                "Welcome home",
+                "Sign in with your Home Assistant account.",
+            )
+        };
+        let badge = container(icon(glyph, 28.0, style::BLUE))
+            .center(Length::Fixed(60.0))
+            .style(style::badge(style::tint(style::BLUE, 0.16)));
         let mut form = column![
-            text("Home").size(32),
-            text("Sign in to your Home Assistant").style(text::secondary),
+            badge,
+            column![
+                text(title).font(style::BOLD).size(26),
+                text(subtitle).size(14).style(style::muted),
+            ]
+            .spacing(6),
         ]
-        .spacing(10)
+        .spacing(20)
         .width(Length::Fixed(360.0));
 
         if self.asking_code {
-            form = form
-                .push(text("Enter the 6-digit code from your authenticator app."))
-                .push(input("123456", &self.code, Message::Code));
+            form = form.push(
+                text_input("123456", &self.code)
+                    .on_input_maybe((!self.busy).then_some(Message::Code as fn(String) -> Message))
+                    .on_submit(Message::Submit)
+                    .padding([14, 16])
+                    .size(24)
+                    .font(style::MEDIUM)
+                    .align_x(Alignment::Center)
+                    .style(style::input(12.0)),
+            );
         } else {
-            form = form
-                .push(input(
-                    "http://stella-server:8123",
-                    &self.server,
-                    Message::Server,
-                ))
-                .push(input("Username", &self.username, Message::Username))
-                .push(input("Password", &self.password, Message::Password).secure(true));
+            form = form.push(
+                column![
+                    field(
+                        "Server",
+                        "http://stella-server:8123",
+                        &self.server,
+                        Message::Server
+                    ),
+                    field("Username", "", &self.username, Message::Username),
+                    column![
+                        text("Password")
+                            .font(style::MEDIUM)
+                            .size(13)
+                            .style(style::muted),
+                        text_input("", &self.password)
+                            .on_input_maybe(
+                                (!self.busy).then_some(Message::Password as fn(String) -> Message)
+                            )
+                            .on_submit(Message::Submit)
+                            .secure(true)
+                            .padding([12, 14])
+                            .size(15)
+                            .style(style::input(12.0)),
+                    ]
+                    .spacing(6),
+                ]
+                .spacing(14),
+            );
         }
         if let Some(error) = &self.error {
-            form = form.push(text(error).style(text::danger));
+            form = form.push(
+                container(
+                    row![
+                        icon(Icon::CircleAlert, 16.0, style::RED),
+                        text(error).size(13).width(Length::Fill),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                )
+                .padding([10, 14])
+                .width(Length::Fill)
+                .style(style::notice),
+            );
         }
         let ready = if self.asking_code {
             self.code.len() == 6
@@ -209,13 +277,19 @@ impl Login {
             (false, false) => "Sign in",
         };
         form = form.push(
-            button(text(label).width(Length::Fill).align_x(Alignment::Center))
-                .on_press_maybe((ready && !self.busy).then_some(Message::Submit))
-                .style(button::primary)
-                .padding(10)
-                .width(Length::Fill),
+            button(
+                text(label)
+                    .font(style::SEMIBOLD)
+                    .size(15)
+                    .width(Length::Fill)
+                    .align_x(Alignment::Center),
+            )
+            .on_press_maybe((ready && !self.busy).then_some(Message::Submit))
+            .style(style::solid(style::BLUE, 14.0))
+            .padding(14)
+            .width(Length::Fill),
         );
-        container(container(form).padding(28).style(style::card))
+        container(container(form).padding(36).style(style::tile))
             .center(Length::Fill)
             .into()
     }

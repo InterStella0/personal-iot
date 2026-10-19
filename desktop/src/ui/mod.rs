@@ -1,26 +1,28 @@
 //! The app: one window that can hide to the tray, signed in to one HA.
 
 mod dashboard;
+mod icon;
 mod login;
 mod settings;
-mod style;
+pub mod style;
 mod voice;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use iced::widget::{button, column, container, row, text};
-use iced::{Alignment, Element, Length, Size, Subscription, Task, Theme, window};
+use iced::widget::{Row, button, column, container, row, space, text, tooltip};
+use iced::{Alignment, Color, Element, Length, Size, Subscription, Task, Theme, window};
 use iot_desktop::audio::mic::{self, Mic};
 use iot_desktop::config::{APP_ID, Config};
 use iot_desktop::ha::assist::Assistant;
-use iot_desktop::ha::entity::{CONTROLLABLE, Registry, State};
+use iot_desktop::ha::entity::{Registry, State};
 use iot_desktop::ha::store;
 use iot_desktop::ha::ws::{self, Audio, Command, Event, Handle, Session};
 use serde_json::{Value, json};
 
 use crate::{shortcut, tray};
+use icon::{Icon, icon};
 use settings::{AssistantChoice, MicChoice};
 use voice::{Phase, Voice};
 
@@ -29,6 +31,7 @@ pub struct Options {
     /// Save a PNG of the window after it loads, then quit (for checking the layout).
     pub screenshot: Option<PathBuf>,
     pub start_in_settings: bool,
+    pub start_room: Option<String>,
 }
 
 enum Screen {
@@ -45,6 +48,7 @@ enum Link {
 }
 
 pub struct App {
+    theme: Theme,
     config: Config,
     screen: Screen,
     window: Option<window::Id>,
@@ -57,6 +61,8 @@ pub struct App {
     voice: Voice,
     command: String,
     settings: bool,
+    /// Show only this area's devices.
+    room: Option<String>,
     mics: Vec<Mic>,
     assistants: Vec<Assistant>,
     preferred_assistant: Option<String>,
@@ -81,6 +87,7 @@ pub enum Message {
     CommandChanged(String),
     SendCommand,
     ToggleSettings,
+    Room(Option<String>),
     RefreshMics,
     Mics(Result<Vec<Mic>, String>),
     MicSelected(MicChoice),
@@ -96,6 +103,7 @@ pub enum Message {
 impl App {
     pub fn new(options: Options) -> (Self, Task<Message>) {
         let app = Self {
+            theme: style::theme(),
             config: Config::load(),
             screen: Screen::Starting,
             window: None,
@@ -108,6 +116,7 @@ impl App {
             voice: Voice::default(),
             command: String::new(),
             settings: options.start_in_settings,
+            room: options.start_room,
             mics: Vec::new(),
             assistants: Vec::new(),
             preferred_assistant: None,
@@ -129,7 +138,7 @@ impl App {
     }
 
     pub fn theme(&self, _window: window::Id) -> Theme {
-        Theme::TokyoNightStorm
+        self.theme.clone()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
@@ -253,6 +262,7 @@ impl App {
                     return list_mics();
                 }
             }
+            Message::Room(room) => self.room = room,
             Message::RefreshMics => return list_mics(),
             Message::Mics(Ok(mics)) => self.mics = mics,
             Message::Mics(Err(error)) => tracing::warn!("can't list microphones: {error}"),
@@ -396,6 +406,7 @@ impl App {
         self.loaded = false;
         self.voice = Voice::default();
         self.settings = false;
+        self.room = None;
         self.screen = Screen::Login(Box::new(login::Login::new(
             self.config.server.clone(),
             error,
@@ -434,9 +445,7 @@ impl App {
         let mut devices: Vec<tray::Device> = self
             .states
             .values()
-            .filter(|state| {
-                CONTROLLABLE.contains(&state.domain()) && !self.registry.is_hidden(&state.entity_id)
-            })
+            .filter(|state| state.controllable() && !self.registry.is_hidden(&state.entity_id))
             .map(|state| tray::Device {
                 entity_id: state.entity_id.clone(),
                 name: state.name().to_owned(),
@@ -454,51 +463,89 @@ impl App {
 
     pub fn view(&self, _window: window::Id) -> Element<'_, Message> {
         match &self.screen {
-            Screen::Starting => container(text("Starting…").style(text::secondary))
-                .center(Length::Fill)
-                .into(),
+            Screen::Starting => container(
+                column![
+                    icon(Icon::House, 40.0, style::FAINT),
+                    text("Home")
+                        .font(style::SEMIBOLD)
+                        .size(18)
+                        .style(style::muted),
+                ]
+                .spacing(12)
+                .align_x(Alignment::Center),
+            )
+            .center(Length::Fill)
+            .into(),
             Screen::Login(login) => login.view().map(Message::Login),
             Screen::Home => self.home(),
         }
     }
 
     fn home(&self) -> Element<'_, Message> {
-        let (dot, link) = match &self.link {
-            Link::Online => ("●", "Connected".to_owned()),
-            Link::Connecting => ("○", "Connecting…".to_owned()),
-            Link::Offline(reason) => ("●", reason.clone()),
+        let sections = dashboard::sections(&self.states, &self.registry);
+        let summary = if self.loaded {
+            dashboard::summary(&sections)
+        } else {
+            "Connecting to your Home Assistant…".to_owned()
         };
-        let link_style = match self.link {
-            Link::Online => text::success,
-            Link::Connecting => text::secondary,
-            Link::Offline(_) => text::danger,
-        };
+
+        let settings_button = button(
+            container(icon(
+                Icon::Settings,
+                20.0,
+                if self.settings {
+                    Color::WHITE
+                } else {
+                    style::TEXT
+                },
+            ))
+            .center(Length::Fill),
+        )
+        .width(44)
+        .height(44)
+        .padding(0)
+        .on_press(Message::ToggleSettings)
+        .style(if self.settings {
+            style::solid(style::BLUE, 22.0)
+        } else {
+            style::solid(style::SURFACE, 22.0)
+        });
         let header = row![
-            text("Home").size(28),
-            text(dot).style(link_style),
-            text(link).style(text::secondary).width(Length::Fill),
-            button(if self.settings { "Devices" } else { "Settings" })
-                .on_press(Message::ToggleSettings)
-                .style(button::secondary),
+            column![
+                text("Home").font(style::BOLD).size(34),
+                text(summary).size(14).style(style::muted),
+            ]
+            .spacing(2),
+            space::horizontal(),
+            self.connection(),
+            settings_button,
         ]
-        .spacing(10)
+        .spacing(12)
         .align_y(Alignment::Center);
 
-        let mut page = column![header].spacing(16).padding(20);
+        let mut page = column![header].spacing(20).padding([22, 28]);
         if let Some(notice) = &self.notice {
             page = page.push(
                 container(
                     row![
-                        text(notice.as_str()).width(Length::Fill),
-                        button("Dismiss")
+                        icon(Icon::CircleAlert, 18.0, style::RED),
+                        text(notice.as_str()).size(14).width(Length::Fill),
+                        button(container(icon(Icon::X, 16.0, style::TEXT)).center(Length::Fill))
+                            .width(30)
+                            .height(30)
+                            .padding(0)
                             .on_press(Message::DismissNotice)
-                            .style(button::text),
+                            .style(style::ghost(style::TEXT)),
                     ]
+                    .spacing(12)
                     .align_y(Alignment::Center),
                 )
                 .padding([8, 14])
                 .style(style::notice),
             );
+        }
+        if !self.settings && sections.len() > 1 {
+            page = page.push(self.rooms(&sections));
         }
         let body = if self.settings {
             settings::view(
@@ -509,7 +556,11 @@ impl App {
                 self.shortcut_problem.as_deref(),
             )
         } else {
-            dashboard::view(&self.states, &self.registry, self.loaded)
+            let room = self
+                .room
+                .as_deref()
+                .filter(|room| sections.iter().any(|section| section.area == *room));
+            dashboard::view(sections, room, self.loaded)
         };
         page.push(container(body).height(Length::Fill))
             .push(voice::view(
@@ -518,6 +569,84 @@ impl App {
                 self.handle.is_some(),
             ))
             .into()
+    }
+
+    /// A pill showing whether the app is connected, with the reason on hover when it isn't.
+    fn connection(&self) -> Element<'_, Message> {
+        let (color, label) = match &self.link {
+            Link::Online => (style::GREEN, "Connected"),
+            Link::Connecting => (style::ORANGE, "Connecting"),
+            Link::Offline(_) => (style::RED, "Offline"),
+        };
+        let dot = container(text(""))
+            .width(8)
+            .height(8)
+            .style(style::badge(color));
+        let pill = container(
+            row![dot, text(label).font(style::MEDIUM).size(13)]
+                .spacing(8)
+                .align_y(Alignment::Center),
+        )
+        .padding([10, 14])
+        .style(style::badge(style::SURFACE));
+        match &self.link {
+            Link::Offline(reason) => tooltip(
+                pill,
+                container(text(reason.as_str()).size(13))
+                    .padding([8, 12])
+                    .max_width(420)
+                    .style(style::tile),
+                tooltip::Position::Bottom,
+            )
+            .gap(8)
+            .into(),
+            _ => pill.into(),
+        }
+    }
+
+    /// Chips to show one area's devices, or all of them.
+    fn rooms(&self, sections: &[dashboard::Section<'_>]) -> Element<'_, Message> {
+        let chip = |label: String, count: usize, room: Option<String>| {
+            let active = self.room == room
+                || (room.is_none()
+                    && self
+                        .room
+                        .as_ref()
+                        .is_none_or(|current| !sections.iter().any(|s| s.area == current)));
+            let (text_color, count_color) = if active {
+                (style::BACKGROUND, style::tint(style::BACKGROUND, 0.6))
+            } else {
+                (style::TEXT, style::FAINT)
+            };
+            button(
+                row![
+                    text(label).font(style::MEDIUM).size(14).color(text_color),
+                    text(count.to_string()).size(13).color(count_color),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .padding([9, 16])
+            .on_press(Message::Room(room))
+            .style(move |theme, status| {
+                if active {
+                    style::choice(true, style::TEXT, 999.0)(theme, status)
+                } else {
+                    style::solid(style::SURFACE, 999.0)(theme, status)
+                }
+            })
+            .into()
+        };
+        let total = sections.iter().map(|section| section.states.len()).sum();
+        let mut chips = vec![chip("All".into(), total, None)];
+        for section in sections {
+            chips.push(chip(
+                section.area.to_owned(),
+                section.states.len(),
+                Some(section.area.to_owned()),
+            ));
+        }
+        Row::with_children(chips).spacing(8).wrap().into()
     }
 }
 

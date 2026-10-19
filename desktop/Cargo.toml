@@ -16,6 +16,7 @@ futures = "0.3"
 # about 95 MB, to draw a window of buttons.
 iced = { version = "0.14", default-features = false, features = [
     "tiny-skia",
+    "svg",
     "crisp",
     "web-colors",
     "thread-pool",

@@ -1,25 +1,38 @@
-//! Device cards, grouped by area. Cards are generic by domain, so new devices just appear.
+//! Device tiles, grouped by area. Tiles are generic by domain, so new devices just appear.
 
 use std::collections::BTreeMap;
 
-use iced::widget::{Row, button, column, container, row, scrollable, space, text};
-use iced::{Alignment, Element, Length, Padding};
-use iot_desktop::ha::entity::{self, CONTROLLABLE, Registry, State};
+use iced::widget::scrollable::{Direction, Scrollbar};
+use iced::widget::{
+    Column, Row, button, column, container, responsive, row, scrollable, space, text,
+};
+use iced::{Alignment, Color, Element, Length, Padding};
+use iot_desktop::ha::entity::{self, Registry, State};
 use serde_json::{Value, json};
 
+use super::icon::{Icon, icon};
 use super::{Message, style};
 
-const CARD_WIDTH: f32 = 320.0;
+const GAP: f32 = 16.0;
+const MIN_TILE: f32 = 300.0;
+const SCROLLBAR: f32 = 6.0;
+const SCROLL_GAP: f32 = 14.0;
 const OTHER: &str = "Other";
 
-/// Areas in name order with "Other" last, each with its devices in name order.
-fn sections<'a>(
+pub struct Section<'a> {
+    pub area: &'a str,
+    pub states: Vec<&'a State>,
+}
+
+/// Areas in name order with "Other" last. Within an area, bigger tiles (climate, fans) come
+/// first so the small ones line up together.
+pub fn sections<'a>(
     states: &'a BTreeMap<String, State>,
     registry: &'a Registry,
-) -> Vec<(&'a str, Vec<&'a State>)> {
+) -> Vec<Section<'a>> {
     let mut sections: BTreeMap<(bool, &str), Vec<&State>> = BTreeMap::new();
     for state in states.values() {
-        if !CONTROLLABLE.contains(&state.domain()) || registry.is_hidden(&state.entity_id) {
+        if !state.controllable() || registry.is_hidden(&state.entity_id) {
             continue;
         }
         let area = registry.area_name(&state.entity_id);
@@ -31,48 +44,162 @@ fn sections<'a>(
     sections
         .into_iter()
         .map(|((_, area), mut states)| {
-            states.sort_by_key(|state| state.name().to_lowercase());
-            (area, states)
+            states.sort_by_key(|state| (rank(state.domain()), state.name().to_lowercase()));
+            Section { area, states }
         })
         .collect()
 }
 
+fn rank(domain: &str) -> u8 {
+    match domain {
+        "climate" => 0,
+        "fan" => 1,
+        "light" => 2,
+        _ => 3,
+    }
+}
+
 pub fn view<'a>(
-    states: &'a BTreeMap<String, State>,
-    registry: &'a Registry,
+    sections: Vec<Section<'a>>,
+    room: Option<&'a str>,
     loaded: bool,
 ) -> Element<'a, Message> {
-    let sections = sections(states, registry);
+    let sections: Vec<Section<'a>> = sections
+        .into_iter()
+        .filter(|section| room.is_none_or(|room| room == section.area))
+        .collect();
     if sections.is_empty() {
-        let message = if loaded {
-            "No devices to show. Climate, fan, light and switch entities appear here."
+        let (title, detail) = if loaded {
+            (
+                "No devices yet",
+                "Air conditioners, fans, lights and switches in Home Assistant show up here.",
+            )
         } else {
-            "Loading devices…"
+            ("Loading devices…", "")
         };
-        return container(text(message).style(text::secondary))
-            .center(Length::Fill)
-            .into();
+        return container(
+            column![
+                icon(Icon::House, 40.0, style::FAINT),
+                text(title).font(style::SEMIBOLD).size(18),
+                text(detail).style(style::muted),
+            ]
+            .spacing(10)
+            .align_x(Alignment::Center),
+        )
+        .center(Length::Fill)
+        .into();
     }
-    // Room on the right so the scrollbar doesn't cover the last column of cards.
-    let mut content = column![].spacing(22).width(Length::Fill).padding(Padding {
-        top: 4.0,
-        right: 20.0,
-        bottom: 4.0,
-        left: 4.0,
-    });
-    for (area, states) in sections {
-        // Fill the width, or the cards wrap at whatever width the widest row happened to need.
-        let cards = Row::with_children(states.into_iter().map(card))
-            .spacing(16)
+    let titled = room.is_none();
+
+    responsive(move |size| {
+        let width = (size.width - SCROLLBAR - SCROLL_GAP).max(MIN_TILE);
+        let columns = ((width + GAP) / (MIN_TILE + GAP)).floor().max(1.0) as usize;
+        let tile_width = (width - GAP * (columns - 1) as f32) / columns as f32;
+
+        let mut content = Column::new().spacing(30).padding(Padding {
+            top: 4.0,
+            bottom: 24.0,
+            ..Padding::ZERO
+        });
+        for section in &sections {
+            let rows = section.states.chunks(columns).map(|chunk| {
+                Row::with_children(chunk.iter().map(|state| tile(state, tile_width)))
+                    .spacing(GAP)
+                    .into()
+            });
+            let grid = Column::with_children(rows).spacing(GAP);
+            if titled {
+                content = content.push(
+                    column![
+                        row![
+                            text(section.area).font(style::SEMIBOLD).size(20),
+                            text(section.states.len().to_string())
+                                .style(style::faint)
+                                .size(15),
+                        ]
+                        .spacing(10)
+                        .align_y(Alignment::Center),
+                        grid,
+                    ]
+                    .spacing(14),
+                );
+            } else {
+                content = content.push(grid);
+            }
+        }
+        scrollable(content)
+            .direction(Direction::Vertical(
+                Scrollbar::new()
+                    .width(SCROLLBAR)
+                    .scroller_width(SCROLLBAR)
+                    .spacing(SCROLL_GAP),
+            ))
+            .style(style::scroller)
             .width(Length::Fill)
-            .wrap()
-            .vertical_spacing(16);
-        content = content.push(column![text(area).size(20), cards].spacing(10));
+            .height(Length::Fill)
+            .into()
+    })
+    .into()
+}
+
+/// The colour a device glows in when it's on.
+fn accent(state: &State) -> Color {
+    match state.domain() {
+        "climate" => mode_accent(&state.state),
+        "fan" => style::TEAL,
+        "light" => light_color(state).unwrap_or(style::YELLOW),
+        _ => style::INDIGO,
     }
-    scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+}
+
+fn mode_accent(mode: &str) -> Color {
+    match mode {
+        "heat" => style::ORANGE,
+        "heat_cool" | "auto" => style::GREEN,
+        "dry" => style::PURPLE,
+        "fan_only" => style::TEAL,
+        _ => style::CYAN,
+    }
+}
+
+/// The light's own colour, brightened enough to read as a glow on a dark tile.
+fn light_color(state: &State) -> Option<Color> {
+    let rgb = state.attributes.get("rgb_color")?.as_array()?;
+    let channel = |i: usize| {
+        rgb.get(i)
+            .and_then(Value::as_f64)
+            .map(|v| (v / 255.0) as f32)
+    };
+    let (r, g, b) = (channel(0)?, channel(1)?, channel(2)?);
+    let peak = r.max(g).max(b);
+    if peak < 0.05 {
+        return None;
+    }
+    // Scale up to full brightness, then wash slightly toward white so dim hues stay visible.
+    let lift = |c: f32| (c / peak) * 0.85 + 0.15;
+    Some(Color::from_rgb(lift(r), lift(g), lift(b)))
+}
+
+fn device_icon(state: &State) -> Icon {
+    match state.domain() {
+        "climate" => match state.state.as_str() {
+            "off" => Icon::AirVent,
+            mode => mode_icon(mode),
+        },
+        "fan" => Icon::Fan,
+        "light" => Icon::Lightbulb,
+        _ => Icon::Plug,
+    }
+}
+
+fn mode_icon(mode: &str) -> Icon {
+    match mode {
+        "heat" => Icon::Flame,
+        "dry" => Icon::Droplets,
+        "fan_only" => Icon::Fan,
+        "heat_cool" | "auto" => Icon::SunSnow,
+        _ => Icon::Snowflake,
+    }
 }
 
 fn status(state: &State) -> String {
@@ -81,12 +208,9 @@ fn status(state: &State) -> String {
     }
     match state.domain() {
         "climate" if state.state != "off" => {
-            let mut parts = vec![label(&state.state)];
+            let mut parts = vec![mode_name(&state.state)];
             if let Some(target) = state.number("temperature") {
                 parts.push(format!("{}°", trim(target)));
-            }
-            if let Some(current) = state.number("current_temperature") {
-                parts.push(format!("room {}°", trim(current)));
             }
             parts.join(" · ")
         }
@@ -95,177 +219,315 @@ fn status(state: &State) -> String {
             None if state.is_on() => "On".into(),
             None => "Off".into(),
         },
-        _ => label(&state.state),
+        "light" if state.is_on() => match state.number("brightness") {
+            Some(brightness) => format!("On · {}%", (brightness / 255.0 * 100.0).round()),
+            None => "On".into(),
+        },
+        _ if state.is_on() => "On".into(),
+        _ => "Off".into(),
     }
 }
 
-fn card(state: &State) -> Element<'_, Message> {
-    let header = row![
-        text(state.name()).size(18).width(Length::Fill),
-        text(status(state)).style(if state.available() {
-            text::secondary
+fn tile(state: &State, width: f32) -> Element<'_, Message> {
+    let available = state.available();
+    let on = state.is_on();
+    let accent = accent(state);
+
+    let (badge_fill, badge_icon) = match (available, on) {
+        (true, true) => (style::tint(accent, 0.18), accent),
+        (true, false) => (style::RAISED, style::MUTED),
+        (false, _) => (style::RAISED, style::FAINT),
+    };
+    let badge = container(icon(
+        if available {
+            device_icon(state)
         } else {
-            text::danger
-        }),
+            Icon::CloudOff
+        },
+        22.0,
+        badge_icon,
+    ))
+    .center(Length::Fixed(46.0))
+    .style(style::badge(badge_fill));
+
+    let status_color = match (available, on) {
+        (false, _) => style::tint(style::RED, 0.85),
+        (true, true) => accent,
+        (true, false) => style::MUTED,
+    };
+    let header = row![
+        badge,
+        column![
+            text(state.name()).font(style::SEMIBOLD).size(16),
+            text(status(state)).size(13).color(status_color),
+        ]
+        .spacing(3)
+        .width(Length::Fill),
+        power(state, accent),
     ]
-    .spacing(8)
+    .spacing(14)
     .align_y(Alignment::Center);
 
-    let controls: Element<'_, Message> = match state.domain() {
-        "climate" => climate(state),
+    let body: Option<Element<'_, Message>> = match state.domain() {
+        "climate" => Some(climate(state)),
         "fan" => fan(state),
-        _ => on_off(state),
+        _ => None,
     };
-    container(column![header, controls].spacing(14))
-        .padding(16)
-        .width(Length::Fixed(CARD_WIDTH))
-        .style(style::card)
+    let content = match body {
+        Some(body) => column![header, body].spacing(20),
+        None => column![header],
+    };
+    container(content)
+        .padding(18)
+        .width(Length::Fixed(width))
+        .style(style::tile)
         .into()
 }
 
-/// A button that calls a service, disabled while the device is offline.
-fn action<'a>(
-    state: &'a State,
-    caption: String,
-    active: bool,
-    service: &str,
-    data: Value,
-) -> Element<'a, Message> {
-    let press = state
+fn call(state: &State, service: &str, data: Value) -> Option<Message> {
+    state
         .available()
-        .then(|| Message::Call(state.entity_id.clone(), service.to_owned(), data));
-    button(text(caption).align_x(Alignment::Center))
+        .then(|| Message::Call(state.entity_id.clone(), service.to_owned(), data))
+}
+
+/// A round button with an icon in the middle.
+fn round<'a>(
+    glyph: Icon,
+    size: f32,
+    glyph_color: Color,
+    style: impl Fn(&iced::Theme, button::Status) -> button::Style + 'a,
+    press: Option<Message>,
+) -> Element<'a, Message> {
+    button(container(icon(glyph, size * 0.45, glyph_color)).center(Length::Fill))
+        .width(size)
+        .height(size)
+        .padding(0)
         .on_press_maybe(press)
-        .style(style::choice(active))
-        .padding([6, 12])
+        .style(style)
+        .into()
+}
+
+fn power(state: &State, accent: Color) -> Element<'_, Message> {
+    let on = state.is_on();
+    let press = call(state, if on { "turn_off" } else { "turn_on" }, json!({}));
+    match (state.available(), on) {
+        (true, true) => round(
+            Icon::Power,
+            40.0,
+            style::BACKGROUND,
+            style::choice(true, accent, 20.0),
+            press,
+        ),
+        (true, false) => round(Icon::Power, 40.0, style::TEXT, style::raised(20.0), press),
+        (false, _) => round(Icon::Power, 40.0, style::FAINT, style::raised(20.0), None),
+    }
+}
+
+/// Options side by side in a rounded track; the selected one fills with `accent`.
+fn segmented<'a>(
+    items: Vec<(Element<'a, Message>, bool, Option<Message>)>,
+    accent: Color,
+) -> Element<'a, Message> {
+    let segments = items.into_iter().map(|(content, active, press)| {
+        button(container(content).center(Length::Fill))
+            .width(Length::Fill)
+            .height(34)
+            .padding(0)
+            .on_press_maybe(press)
+            .style(style::choice(active, accent, 11.0))
+            .into()
+    });
+    container(Row::with_children(segments).spacing(4))
+        .padding(4)
+        .width(Length::Fill)
+        .style(style::track)
+        .into()
+}
+
+fn segment_label<'a>(label: String, active: bool, enabled: bool) -> Element<'a, Message> {
+    let color = match (enabled, active) {
+        (false, _) => style::FAINT,
+        (true, true) => style::BACKGROUND,
+        (true, false) => style::TEXT,
+    };
+    text(label)
+        .size(13)
+        .font(if active {
+            style::SEMIBOLD
+        } else {
+            style::MEDIUM
+        })
+        .color(color)
         .into()
 }
 
 fn climate(state: &State) -> Element<'_, Message> {
+    let available = state.available();
     let on = state.is_on();
-    let mut controls = column![].spacing(10);
-
-    let mut modes = Row::new().spacing(6).push(action(
-        state,
-        if on { "Turn off" } else { "Turn on" }.into(),
-        false,
-        if on { "turn_off" } else { "turn_on" },
-        json!({}),
-    ));
-    for mode in state
-        .list("hvac_modes")
-        .into_iter()
-        .filter(|mode| mode != "off")
-    {
-        let active = on && state.state == mode;
-        modes = modes.push(action(
-            state,
-            label(&mode),
-            active,
-            "set_hvac_mode",
-            json!({"hvac_mode": mode}),
-        ));
-    }
-    controls = controls.push(modes.wrap().vertical_spacing(6));
+    let accent = mode_accent(&state.state);
+    let mut body = Column::new().spacing(16);
 
     if let Some(target) = state.number("temperature") {
         let step = state.number("target_temp_step").unwrap_or(1.0);
         let min = state.number("min_temp").unwrap_or(16.0);
         let max = state.number("max_temp").unwrap_or(30.0);
-        let lower = (target - step).max(min);
-        let higher = (target + step).min(max);
-        let unit = if state.text("temperature_unit") == Some("°F") {
-            "°F"
+        let number_color = if available && on {
+            style::TEXT
         } else {
-            "°"
+            style::MUTED
         };
-        controls = controls.push(
+        let caption = match state.number("current_temperature") {
+            Some(room) => format!("Room {}°", trim(room)),
+            None => "Target".into(),
+        };
+        let step_color = if available { style::TEXT } else { style::FAINT };
+        let set = |temperature: f64| {
+            call(
+                state,
+                "set_temperature",
+                json!({"temperature": temperature}),
+            )
+        };
+        let readout = column![
             row![
-                action(
-                    state,
-                    "−".into(),
-                    false,
-                    "set_temperature",
-                    json!({"temperature": lower})
+                text(trim(target))
+                    .font(style::LIGHT)
+                    .size(52)
+                    .color(number_color),
+                text("°").font(style::LIGHT).size(28).color(number_color),
+            ]
+            .align_y(Alignment::Start),
+            text(caption).size(12).style(style::muted),
+        ]
+        .align_x(Alignment::Center);
+        body = body.push(
+            row![
+                round(
+                    Icon::Minus,
+                    44.0,
+                    step_color,
+                    style::raised(22.0),
+                    if target > min {
+                        set((target - step).max(min))
+                    } else {
+                        None
+                    },
                 ),
-                text(format!("{}{unit}", trim(target)))
-                    .size(28)
-                    .width(Length::Fixed(90.0))
-                    .align_x(Alignment::Center),
-                action(
-                    state,
-                    "+".into(),
-                    false,
-                    "set_temperature",
-                    json!({"temperature": higher})
+                space::horizontal(),
+                readout,
+                space::horizontal(),
+                round(
+                    Icon::Plus,
+                    44.0,
+                    step_color,
+                    style::raised(22.0),
+                    if target < max {
+                        set((target + step).min(max))
+                    } else {
+                        None
+                    },
                 ),
             ]
-            .spacing(10)
             .align_y(Alignment::Center),
         );
+    }
+
+    let modes: Vec<String> = state
+        .list("hvac_modes")
+        .into_iter()
+        .filter(|mode| mode != "off")
+        .collect();
+    if !modes.is_empty() {
+        let items = modes
+            .into_iter()
+            .map(|mode| {
+                let active = on && state.state == mode;
+                let color = match (available, active) {
+                    (false, _) => style::FAINT,
+                    (true, true) => style::BACKGROUND,
+                    (true, false) => style::MUTED,
+                };
+                let press = call(state, "set_hvac_mode", json!({"hvac_mode": mode}));
+                let glyph: Element<'_, Message> = icon(mode_icon(&mode), 18.0, color).into();
+                (glyph, active, press)
+            })
+            .collect();
+        body = body.push(segmented(items, accent));
     }
 
     let fan_modes = state.list("fan_modes");
     if !fan_modes.is_empty() {
         let current = state.text("fan_mode").unwrap_or_default().to_owned();
-        let mut fans = Row::new()
-            .spacing(6)
-            .align_y(Alignment::Center)
-            .push(text("Fan").style(text::secondary))
-            .push(space().width(4));
-        for mode in fan_modes {
-            let active = mode == current;
-            fans = fans.push(action(
-                state,
-                label(&mode),
-                active,
-                "set_fan_mode",
-                json!({"fan_mode": mode}),
-            ));
-        }
-        controls = controls.push(fans.wrap().vertical_spacing(6));
+        let picker: Element<'_, Message> = if fan_modes.len() <= 4 {
+            let items = fan_modes
+                .into_iter()
+                .map(|mode| {
+                    let active = mode == current;
+                    let label = segment_label(short(&mode), active, available);
+                    let press = call(state, "set_fan_mode", json!({"fan_mode": mode}));
+                    (label, active, press)
+                })
+                .collect();
+            segmented(items, style::TEAL)
+        } else {
+            let pills = fan_modes.into_iter().map(|mode| {
+                let active = mode == current;
+                button(segment_label(label(&mode), active, available))
+                    .padding([7, 12])
+                    .on_press_maybe(call(state, "set_fan_mode", json!({"fan_mode": mode})))
+                    .style(style::choice(active, style::TEAL, 11.0))
+                    .into()
+            });
+            Row::with_children(pills)
+                .spacing(6)
+                .wrap()
+                .vertical_spacing(6)
+                .into()
+        };
+        body = body.push(
+            column![
+                row![
+                    icon(Icon::Wind, 14.0, style::MUTED),
+                    text("Fan speed").size(12).style(style::muted),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+                picker,
+            ]
+            .spacing(8),
+        );
     }
-    controls.into()
+    body.into()
 }
 
-fn fan(state: &State) -> Element<'_, Message> {
-    let Some(count) = state.fan_speed_count() else {
-        return on_off(state);
-    };
+fn fan(state: &State) -> Option<Element<'_, Message>> {
+    let count = state.fan_speed_count()?;
+    let available = state.available();
     let current = state.fan_speed();
-    let mut speeds = Row::new().spacing(6).push(action(
-        state,
-        "Off".into(),
-        !state.is_on(),
-        "turn_off",
-        json!({}),
-    ));
+    let off = available && !state.is_on();
+    let mut items = vec![(
+        segment_label("Off".into(), off, available),
+        off,
+        call(state, "turn_off", json!({})),
+    )];
     for speed in 1..=count {
+        let active = current == Some(speed);
         let percentage = entity::percentage_for_speed(speed, count);
-        speeds = speeds.push(action(
-            state,
-            speed.to_string(),
-            current == Some(speed),
-            "set_percentage",
-            json!({"percentage": percentage}),
+        items.push((
+            segment_label(speed.to_string(), active, available),
+            active,
+            call(state, "set_percentage", json!({"percentage": percentage})),
         ));
     }
-    speeds.wrap().vertical_spacing(6).into()
+    Some(segmented(items, style::TEAL))
 }
 
-fn on_off(state: &State) -> Element<'_, Message> {
-    row![
-        action(
-            state,
-            "Off".into(),
-            state.available() && !state.is_on(),
-            "turn_off",
-            json!({})
-        ),
-        action(state, "On".into(), state.is_on(), "turn_on", json!({})),
-    ]
-    .spacing(6)
-    .into()
+fn mode_name(mode: &str) -> String {
+    match mode {
+        "heat_cool" => "Heat/Cool".into(),
+        "fan_only" => "Fan".into(),
+        other => label(other),
+    }
 }
 
 /// `fan_only` → "Fan only".
@@ -278,11 +540,40 @@ pub fn label(value: &str) -> String {
     }
 }
 
+/// A label short enough for a segment: "medium" → "Med".
+fn short(value: &str) -> String {
+    match value {
+        "medium" | "middle" => "Med".into(),
+        other => label(other),
+    }
+}
+
 /// 24.0 → "24", 24.5 → "24.5".
 fn trim(value: f64) -> String {
     if value.fract() == 0.0 {
         format!("{value:.0}")
     } else {
         format!("{value:.1}")
+    }
+}
+
+/// How many devices are on and offline, for the header.
+pub fn summary(sections: &[Section<'_>]) -> String {
+    let (mut on, mut offline) = (0, 0);
+    for state in sections.iter().flat_map(|section| section.states.iter()) {
+        if !state.available() {
+            offline += 1;
+        } else if state.is_on() {
+            on += 1;
+        }
+    }
+    let on = match on {
+        0 => "Everything is off".to_owned(),
+        1 => "1 device on".to_owned(),
+        n => format!("{n} devices on"),
+    };
+    match offline {
+        0 => on,
+        n => format!("{on} · {n} offline"),
     }
 }
