@@ -98,7 +98,8 @@ trials too. To edit the file by hand, stop HA first.
 `desktop/` is Home, a native Rust app ([iced](https://iced.rs)). It talks only to HA's own APIs:
 the login flow, the websocket API and Assist pipelines. It draws on the CPU (iced's tiny-skia
 renderer): the GPU renderer would load every GPU driver into the app, about 95 MB, to draw a
-window of buttons. It uses about 40 MB.
+window of buttons. It uses about 30 MB of its own memory (what System Monitor shows), 45 MB
+counting shared libraries.
 
 It shows every climate, fan, light and switch entity in HA, from any integration, grouped by
 area. Other kinds of device are reachable by voice.
