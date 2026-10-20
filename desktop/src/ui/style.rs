@@ -83,7 +83,8 @@ fn lighten(color: Color, amount: f32) -> Color {
 
 // Containers
 
-// No shadow: on a near-black background it barely shows, and scrollables don't clip it.
+// No shadows on tiles or the dock: the CPU renderer only repaints a shadow when its box is
+// repainted, so scrolling past one leaves it flickering. On near-black they barely show anyway.
 pub fn tile(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(SURFACE.into()),
@@ -97,11 +98,6 @@ pub fn dock(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(SURFACE.into()),
         border: border::rounded(30).color(LINE).width(1),
-        shadow: Shadow {
-            color: Color::from_rgba8(0, 0, 0, 0.5),
-            offset: Vector::new(0.0, 10.0),
-            blur_radius: 30.0,
-        },
         ..container::Style::default()
     }
 }
