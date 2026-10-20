@@ -202,7 +202,7 @@ async def speech_services(ha):
 
 
 async def tuya(ha):
-    step("Tuya devices")
+    step("Tuya devices (type skip if you don't use Tuya)")
     if not await ha.entries("tuya"):
         say("  This one needs your phone, so add it in Home Assistant's web UI:")
         say("  Settings → Devices & services → Add integration → Tuya. Enter the user code from")

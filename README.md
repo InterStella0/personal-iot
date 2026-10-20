@@ -1,30 +1,32 @@
 # personal-iot
 
-My home automation, built around [Home Assistant](https://www.home-assistant.io) in Docker. One
-server controls the air conditioners and fans in two houses, understands voice commands, and
-comes with a native desktop app.
+My home automation, built around [Home Assistant](https://www.home-assistant.io) in Docker: one
+server with local voice commands and a native desktop app. It works with whatever Home Assistant
+supports. My own devices are Tuya (Smart Life) ones in two houses, so the setup script has extra
+help for those.
 
-- **Two houses, one server.** Devices are reached through Tuya's cloud, so no house needs a hub.
-- **IR devices as real devices.** IR air conditioners get temperature, mode and fan speed; an IR
-  fan with learned remote buttons gets speeds 1–4.
+- **Any Home Assistant device.** Voice controls anything Home Assistant does, and the desktop
+  app shows its air conditioners, thermostats, fans, lights and switches on their own.
 - **Local voice.** Speech-to-text, text-to-speech and the "okay nabu" wake word run on the server.
 - **Home, a desktop app.** Native Rust, no browser: device buttons, a talk shortcut, a tray icon.
 - **Private by default.** Reachable over Tailscale; a Cloudflare Tunnel is optional.
+- **For Tuya devices:** two houses on one server with no hub, through Tuya's cloud. IR air
+  conditioners get temperature, mode and fan speed, and an IR fan with learned remote buttons
+  gets speeds 1–4.
 
 ```mermaid
 flowchart LR
     phone["Phone<br/>Home Assistant app"] -->|Tailscale or<br/>Cloudflare Tunnel| ha
     pc["PC<br/>Home desktop app"] -->|Tailscale| ha
     ha["<b>Server (Docker)</b><br/>Home Assistant<br/>whisper · piper · openWakeWord"]
-    ha <-->|Tuya cloud| devices["ACs, fans, switches<br/>in both houses"]
+    ha <-->|any integration<br/>mine: Tuya cloud| devices["ACs, fans, lights,<br/>switches"]
     ha <-->|Tailscale| rgb["PC lights<br/>OpenRGB"]
     ha -->|voice commands| agents["Jev, with an<br/>LLM fallback"]
 ```
 
 ## Quick start
 
-You need a Linux server with Docker and [Tailscale](https://tailscale.com), and a Smart Life
-(Tuya) account for the devices.
+You need a Linux server with Docker and [Tailscale](https://tailscale.com).
 
 **1. The server.** One script does the rest, asking for what it needs as it goes:
 
@@ -33,10 +35,11 @@ git clone https://github.com/InterStella0/personal-iot.git ~/personal-iot
 ~/personal-iot/server/setup.sh
 ```
 
-It creates your account with two-factor login, starts the speech services, adds the integrations,
-and builds the voice assistant. The one step it can't do is Tuya's QR login: it tells you when to
-add Tuya in the web UI and waits. Keys for Jev and DeepSeek are optional; rerun the script
-whenever you have them.
+It creates your account with two-factor login, starts the speech services and connects them to
+Home Assistant, and builds the voice assistant. Keys for Jev and DeepSeek are optional; rerun the script whenever
+you have them. Add your devices' integrations in the web UI, under Settings → Devices &
+services. If you use Tuya, the script waits while you do its QR login there, then adds IR air
+conditioner support; type `skip` if you don't.
 
 **2. The PC.** Build and install the desktop app, then sign in with the same account:
 

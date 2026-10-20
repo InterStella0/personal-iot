@@ -1,6 +1,6 @@
 # Details
 
-What `server/setup.sh` does and why, how each device gets into Home Assistant (HA), and the
+What `server/setup.sh` does and why, how my devices get into Home Assistant (HA), and the
 notes worth knowing when something breaks.
 
 ## What setup.sh does
@@ -17,8 +17,8 @@ notes worth knowing when something breaks.
 6. Runs `setup/configure_ha.py` inside the HA container, which uses HA's API to:
    - create your account (or sign you in) and set up two-factor login with a QR code;
    - add whisper, piper and openWakeWord through the Wyoming integration;
-   - wait while you add Tuya in the web UI (its QR login needs your phone), then add Tuya IR
-     Climate;
+   - if you use Tuya, wait while you add it in the web UI (its QR login needs your phone), then
+     add Tuya IR Climate;
    - add DeepSeek as the fallback agent and Jev as the main agent, if you give it the keys;
    - create a voice assistant with all of the above and the "okay nabu" wake word, and make it
      the preferred one;
@@ -27,6 +27,9 @@ notes worth knowing when something breaks.
 Every step checks what already exists, so run it again after adding Tuya or getting a key.
 
 ## Devices
+
+Anything HA supports works: add its integration under Settings → Devices & services. These are
+mine, which is why setup.sh has steps for Tuya.
 
 | House | Device | In HA through |
 |---|---|---|
@@ -96,6 +99,9 @@ trials too. To edit the file by hand, stop HA first.
 the login flow, the websocket API and Assist pipelines. It draws on the CPU (iced's tiny-skia
 renderer): the GPU renderer would load every GPU driver into the app, about 95 MB, to draw a
 window of buttons. It uses about 40 MB.
+
+It shows every climate, fan, light and switch entity in HA, from any integration, grouped by
+area. Other kinds of device are reachable by voice.
 
 The look follows Apple's Home app and Home Assistant's Mushroom cards: dark tiles with an icon
 that lights up in the device's colour when it's on (a light's own colour, for RGB lights),
